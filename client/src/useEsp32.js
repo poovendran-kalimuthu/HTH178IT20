@@ -7,16 +7,7 @@ export function useEsp32() {
     lastSeen: null,
     latencyMs: 0,
     packetsReceived: 0,
-    latestTelemetry: {
-      voltage: 230.2,
-      current: 12.4,
-      power: 2.85,
-      frequency: 50.02,
-      soc: 85.0,
-      temperature: 32.5,
-      ir_sensor: 1,
-      timestamp: new Date().toISOString()
-    },
+    latestTelemetry: null,
     history: []
   });
 

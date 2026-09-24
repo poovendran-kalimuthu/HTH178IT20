@@ -43,17 +43,28 @@ unsigned long lastTelemetryTime = 0;
 const unsigned long telemetryInterval = 300;
 
 float voltage = 230.0;
-float current = 12.5;
+float current1 = 12.5;
+float current2 = 8.2;
+float current3 = 14.1;
+float current4 = 4.5;
 float power = 2.875;
 float frequency = 50.0;
 float soc = 85.0;
 float temperature = 32.0;
 const int IR_PIN = 27;
 
+bool relay1 = false;
+bool relay2 = false;
+bool relay3 = false;
+bool relay4 = false;
+
 void sendTelemetry() {
   voltage     = 228.0 + (random(0, 400) / 100.0);
-  current     = 10.0 + (random(0, 800) / 100.0);
-  power       = (voltage * current) / 1000.0;
+  current1    = 10.0 + (random(0, 800) / 100.0);
+  current2    = 8.0 + (random(0, 400) / 100.0);
+  current3    = 14.0 + (random(0, 600) / 100.0);
+  current4    = 4.0 + (random(0, 200) / 100.0);
+  power       = (voltage * current1) / 1000.0;
   frequency   = 49.95 + (random(0, 10) / 100.0);
   soc         = max(10.0, soc - (power * 0.005));
   temperature = 31.0 + (random(0, 30) / 10.0);
@@ -65,17 +76,24 @@ void sendTelemetry() {
   doc["deviceId"]    = "esp32-horizon";
   doc["ip"]          = WiFi.localIP().toString();
   doc["voltage"]     = voltage;
-  doc["current"]     = current;
+  doc["current1"]    = current1;
+  doc["current2"]    = current2;
+  doc["current3"]    = current3;
+  doc["current4"]    = current4;
   doc["power"]       = power;
   doc["frequency"]   = frequency;
   doc["soc"]         = soc;
   doc["temperature"] = temperature;
   doc["ir_sensor"]   = irValue;
+  doc["relay1"]      = relay1;
+  doc["relay2"]      = relay2;
+  doc["relay3"]      = relay3;
+  doc["relay4"]      = relay4;
 
   String jsonString;
   serializeJson(doc, jsonString);
   webSocket.sendTXT(jsonString);
-  Serial.printf("[WS] Telemetry sent: %.1fV | %.2fA | %.2fkW | IR: %d\\n", voltage, current, power, irValue);
+  Serial.printf("[WS] Telemetry sent: %.1fV | %.2fA | %.2fkW | IR: %d\\n", voltage, current1, power, irValue);
 }
 
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
@@ -130,27 +148,15 @@ void loop() {
 
 // ─── Tab definitions ─────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'port',          label: 'Port Configuration',    icon: Plug,       badge: null,     hasDot: false, desc: 'Serial & network port settings' },
-  { id: 'status',        label: 'Status',                icon: Activity,   badge: 'OK',     hasDot: false, desc: 'Live system health overview'    },
-  { id: 'esp32',         label: 'ESP32 Telemetry',       icon: Cpu,        badge: '10.38.24.77', hasDot: true,  desc: 'ESP32 WebSocket sensors & firmware' },
-  { id: 'logs',          label: 'Logs',                  icon: ScrollText, badge: '3',      hasDot: true,  desc: 'System event log viewer'        },
-  { id: 'notifications', label: 'Notification Settings', icon: Bell,       badge: null,     hasDot: true,  desc: 'Alert channels & triggers'      },
-  { id: 'peak',          label: 'Peak Configuration',    icon: Zap,        badge: 'Active', hasDot: false, desc: 'Demand shaving thresholds'      },
+  { id: 'port',          label: 'Port configuration',    icon: Plug,       badge: null,     hasDot: false, desc: 'Configure Relays & Sensor ports' },
+  { id: 'status',        label: 'Status',                icon: Activity,   badge: 'OK',     hasDot: false, desc: 'Live ESP32 telemetry & health'    },
+  { id: 'logs',          label: 'logs',                  icon: ScrollText, badge: null,      hasDot: false,  desc: 'System event log viewer'        },
+  { id: 'notifications', label: 'Notification Settings', icon: Bell,       badge: null,     hasDot: false,  desc: 'Alert channels & triggers'      },
+  { id: 'peak',          label: 'Peak configuration',    icon: Zap,        badge: null, hasDot: false, desc: 'Demand shaving thresholds'      },
 ];
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
-const MOCK_LOGS = [
-  { id: 1,  ts: '21:30:04', level: 'INFO',  src: 'ModbusPort',   msg: 'Connection established on COM3 at 9600 baud.' },
-  { id: 2,  ts: '21:30:07', level: 'INFO',  src: 'PeakEngine',   msg: 'Peak shaving algorithm initialised. Threshold: 450 kW.' },
-  { id: 3,  ts: '21:31:12', level: 'WARN',  src: 'GridMonitor',  msg: 'Demand approaching threshold — 89% utilisation.' },
-  { id: 4,  ts: '21:31:14', level: 'INFO',  src: 'PeakEngine',   msg: 'Load shedding triggered. Reduced by 42 kW.' },
-  { id: 5,  ts: '21:32:00', level: 'INFO',  src: 'BatteryMgr',   msg: 'BESS discharge initiated. SoC: 84%.' },
-  { id: 6,  ts: '21:32:55', level: 'ERROR', src: 'ModbusPort',   msg: 'CRC error on register 0x0040. Retrying (1/3).' },
-  { id: 7,  ts: '21:33:01', level: 'INFO',  src: 'ModbusPort',   msg: 'Register read successful on retry.' },
-  { id: 8,  ts: '21:33:45', level: 'INFO',  src: 'NotifService', msg: 'Email alert dispatched to ops-team@kpr.in.' },
-  { id: 9,  ts: '21:34:10', level: 'WARN',  src: 'BatteryMgr',   msg: 'SoC below 30%. Curtailing discharge rate.' },
-  { id: 10, ts: '21:35:00', level: 'INFO',  src: 'Scheduler',    msg: 'Peak window ended. Normal operation resumed.' },
-];
+const MOCK_LOGS = [];
 
 const STATUS_SERVICES = [
   { id: 'modbus', label: 'Modbus RTU Bridge',   status: 'online',   uptime: '4h 12m', latency: '3 ms',   port: 'COM3'    },
@@ -515,12 +521,19 @@ export function Esp32Tab() {
     sendCommand('telemetry', {
       type: 'telemetry',
       voltage: 231.2 + (Math.random() * 2 - 1),
-      current: 13.8 + (Math.random() * 2 - 1),
+      current1: 13.8 + (Math.random() * 2 - 1),
+      current2: 8.5 + (Math.random() * 1.5 - 0.75),
+      current3: 15.2 + (Math.random() * 2.5 - 1.25),
+      current4: 5.1 + (Math.random() * 0.8 - 0.4),
       power: 3.19 + (Math.random() * 0.4 - 0.2),
       frequency: 50.01 + (Math.random() * 0.04 - 0.02),
       soc: 83.5,
       temperature: 33.1 + (Math.random() * 0.5),
-      ir_sensor: Math.random() > 0.5 ? 1 : 0
+      ir_sensor: Math.random() > 0.5 ? 1 : 0,
+      relay1: esp32.latestTelemetry?.relay1 || false,
+      relay2: esp32.latestTelemetry?.relay2 || false,
+      relay3: esp32.latestTelemetry?.relay3 || false,
+      relay4: esp32.latestTelemetry?.relay4 || false,
     });
   };
 
@@ -639,17 +652,62 @@ export function Esp32Tab() {
 
         <div className="esp32-metric-card">
           <div className="metric-header">
-            <span className="metric-title">Current</span>
+            <span className="metric-title">Current (CT1)</span>
             <Cpu size={16} color="#8b5cf6" />
           </div>
           <div className="metric-number-wrap">
-            <span className="metric-number">{t.current !== undefined ? Number(t.current).toFixed(2) : '0.00'}</span>
+            <span className="metric-number">{t.current1 !== undefined ? Number(t.current1).toFixed(2) : '0.00'}</span>
             <span className="metric-unit">A</span>
           </div>
           <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
+            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current1 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
           </div>
           <span className="metric-hint">Phase 1 RMS Current</span>
+        </div>
+
+        <div className="esp32-metric-card">
+          <div className="metric-header">
+            <span className="metric-title">Current (CT2)</span>
+            <Cpu size={16} color="#8b5cf6" />
+          </div>
+          <div className="metric-number-wrap">
+            <span className="metric-number">{t.current2 !== undefined ? Number(t.current2).toFixed(2) : '0.00'}</span>
+            <span className="metric-unit">A</span>
+          </div>
+          <div className="metric-bar-wrap">
+            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current2 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
+          </div>
+          <span className="metric-hint">Phase 2 RMS Current</span>
+        </div>
+
+        <div className="esp32-metric-card">
+          <div className="metric-header">
+            <span className="metric-title">Current (CT3)</span>
+            <Cpu size={16} color="#8b5cf6" />
+          </div>
+          <div className="metric-number-wrap">
+            <span className="metric-number">{t.current3 !== undefined ? Number(t.current3).toFixed(2) : '0.00'}</span>
+            <span className="metric-unit">A</span>
+          </div>
+          <div className="metric-bar-wrap">
+            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current3 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
+          </div>
+          <span className="metric-hint">Phase 3 RMS Current</span>
+        </div>
+
+        <div className="esp32-metric-card">
+          <div className="metric-header">
+            <span className="metric-title">Current (CT4)</span>
+            <Cpu size={16} color="#8b5cf6" />
+          </div>
+          <div className="metric-number-wrap">
+            <span className="metric-number">{t.current4 !== undefined ? Number(t.current4).toFixed(2) : '0.00'}</span>
+            <span className="metric-unit">A</span>
+          </div>
+          <div className="metric-bar-wrap">
+            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current4 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
+          </div>
+          <span className="metric-hint">Neutral RMS Current</span>
         </div>
 
         <div className="esp32-metric-card">
@@ -1133,6 +1191,60 @@ function PeakConfigTab() {
 }
 
 // ─── Main Settings Page ───────────────────────────────────────────────────────
+export function PortsConfigTab() {
+  const { esp32, sendCommand } = useEsp32();
+  
+  const toggleRelay = (relayId, currentState) => {
+    sendCommand('relay_control', { relay: relayId, state: !currentState });
+  };
+
+  const t = esp32.latestTelemetry || {};
+  
+  return (
+    <div className="stg-pane" id="ports-pane">
+      <div className="stg-section-head">
+        <div className="stg-section-icon"><SettingsIcon size={16} /></div>
+        <div>
+          <h2 className="stg-section-title">Port Control & Relays</h2>
+          <p className="stg-section-desc">Manage ESP32 output ports and monitor current status.</p>
+        </div>
+      </div>
+      
+      <h3 style={{ marginBottom: '1rem', marginTop: '1rem', fontSize: '1.1rem', color: 'var(--color-fg)' }}>Relay Controls</h3>
+      <div className="stg-kpi-grid" style={{ marginBottom: '2.5rem' }}>
+        <div className="stg-kpi-tile kpi--cyan" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span className="kpi-label">Relay 1 (1-Ch)</span>
+            <span className="kpi-val" style={{ fontSize: '1.2rem' }}>{t.relay1 ? 'ON' : 'OFF'}</span>
+          </div>
+          <ToggleSwitch id="r1" checked={t.relay1} onChange={() => toggleRelay(1, t.relay1)} />
+        </div>
+        <div className="stg-kpi-tile kpi--cyan" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span className="kpi-label">Relay 2 (1-Ch)</span>
+            <span className="kpi-val" style={{ fontSize: '1.2rem' }}>{t.relay2 ? 'ON' : 'OFF'}</span>
+          </div>
+          <ToggleSwitch id="r2" checked={t.relay2} onChange={() => toggleRelay(2, t.relay2)} />
+        </div>
+        <div className="stg-kpi-tile kpi--indigo" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span className="kpi-label">Relay 3 (2-Ch A)</span>
+            <span className="kpi-val" style={{ fontSize: '1.2rem' }}>{t.relay3 ? 'ON' : 'OFF'}</span>
+          </div>
+          <ToggleSwitch id="r3" checked={t.relay3} onChange={() => toggleRelay(3, t.relay3)} />
+        </div>
+        <div className="stg-kpi-tile kpi--indigo" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span className="kpi-label">Relay 4 (2-Ch B)</span>
+            <span className="kpi-val" style={{ fontSize: '1.2rem' }}>{t.relay4 ? 'ON' : 'OFF'}</span>
+          </div>
+          <ToggleSwitch id="r4" checked={t.relay4} onChange={() => toggleRelay(4, t.relay4)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage({ onBack, defaultTab = 'port' }) {
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -1171,14 +1283,13 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
   }, []);
 
   const panels = {
-    port:          PortConfigTab,
-    status:        StatusTab,
-    esp32:         Esp32Tab,
+    port:          PortsConfigTab,
+    status:        Esp32Tab,
     logs:          LogsTab,
     notifications: NotificationsTab,
     peak:          PeakConfigTab,
   };
-  const ActivePanel = panels[activeTab] || PortConfigTab;
+  const ActivePanel = panels[activeTab] || PortsConfigTab;
 
   const filteredTabs = TABS.filter(tab =>
     tab.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
