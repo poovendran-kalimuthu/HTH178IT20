@@ -9,154 +9,41 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Plug, Activity, ScrollText, Bell, Zap, ChevronRight, Save, RotateCcw,
   AlertTriangle, Wifi, Terminal, Clock, Download, Trash2,
-  Mail, MessageSquare, Webhook, BarChart2, TrendingUp, RefreshCw,
-  Eye, EyeOff, Copy, Check, Server, Database, Power, Cpu,
-  Search, ArrowLeft, ArrowRight, ChevronDown, Plus, SlidersHorizontal, Filter,
-  Settings as SettingsIcon, User, CheckCircle2, Code
+  Mail, MessageSquare, Webhook, RefreshCw,
+  Eye, Copy, Check, Database, Power, Cpu,
+  Search, ArrowLeft, ArrowRight, ChevronDown, Plus, SlidersHorizontal,
+  Settings as SettingsIcon, CheckCircle2, Code, HardDrive, Sparkles
 } from 'lucide-react';
 import { useEsp32 } from './useEsp32.js';
+import DeviceConfigTab from './DeviceConfig.jsx';
+import LoadSheddingTab from './LoadShedding.jsx';
+import LoadRecommendationsTab from './LoadRecommendations.jsx';
+import RelayControllerTab from './RelayController.jsx';
+import { ESP32_FIRMWARE_CODE } from './esp32FirmwareCode.js';
 import './Settings.css';
-
-const ESP32_FIRMWARE_CODE = `/*
- * KPR Horizon - ESP32 WebSocket Telemetry Client
- * Target Device IP: 10.38.24.77
- * Backend WebSocket Server: ws://10.38.24.64:5000/ws
- *
- * Required Libraries:
- * 1. WebSockets by Markus Sattler
- * 2. ArduinoJson by Benoit Blanchon
- */
-
-#include <WiFi.h>
-#include <WebSocketsClient.h>
-#include <ArduinoJson.h>
-
-const char* ssid     = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
-
-const char* ws_host  = "10.38.24.64";
-const int   ws_port  = 5000;
-const char* ws_path  = "/ws";
-
-WebSocketsClient webSocket;
-unsigned long lastTelemetryTime = 0;
-const unsigned long telemetryInterval = 300;
-
-float voltage = 230.0;
-float current1 = 12.5;
-float current2 = 8.2;
-float current3 = 14.1;
-float current4 = 4.5;
-float power = 2.875;
-float frequency = 50.0;
-float soc = 85.0;
-float temperature = 32.0;
-const int IR_PIN = 27;
-
-bool relay1 = false;
-bool relay2 = false;
-bool relay3 = false;
-bool relay4 = false;
-
-void sendTelemetry() {
-  voltage     = 228.0 + (random(0, 400) / 100.0);
-  current1    = 10.0 + (random(0, 800) / 100.0);
-  current2    = 8.0 + (random(0, 400) / 100.0);
-  current3    = 14.0 + (random(0, 600) / 100.0);
-  current4    = 4.0 + (random(0, 200) / 100.0);
-  power       = (voltage * current1) / 1000.0;
-  frequency   = 49.95 + (random(0, 10) / 100.0);
-  soc         = max(10.0, soc - (power * 0.005));
-  temperature = 31.0 + (random(0, 30) / 10.0);
-  int irValue = digitalRead(IR_PIN);
-
-  StaticJsonDocument<512> doc;
-  doc["type"]        = "telemetry";
-  doc["role"]        = "esp32";
-  doc["deviceId"]    = "esp32-horizon";
-  doc["ip"]          = WiFi.localIP().toString();
-  doc["voltage"]     = voltage;
-  doc["current1"]    = current1;
-  doc["current2"]    = current2;
-  doc["current3"]    = current3;
-  doc["current4"]    = current4;
-  doc["power"]       = power;
-  doc["frequency"]   = frequency;
-  doc["soc"]         = soc;
-  doc["temperature"] = temperature;
-  doc["ir_sensor"]   = irValue;
-  doc["relay1"]      = relay1;
-  doc["relay2"]      = relay2;
-  doc["relay3"]      = relay3;
-  doc["relay4"]      = relay4;
-
-  String jsonString;
-  serializeJson(doc, jsonString);
-  webSocket.sendTXT(jsonString);
-  Serial.printf("[WS] Telemetry sent: %.1fV | %.2fA | %.2fkW | IR: %d\\n", voltage, current1, power, irValue);
-}
-
-void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-  switch(type) {
-    case WStype_DISCONNECTED:
-      Serial.println("[WS] Disconnected from Horizon Server");
-      break;
-    case WStype_CONNECTED:
-      Serial.println("[WS] Connected to Server!");
-      {
-        StaticJsonDocument<200> handshake;
-        handshake["type"] = "esp32_handshake";
-        handshake["role"] = "esp32";
-        handshake["deviceId"] = "esp32-horizon";
-        handshake["ip"] = WiFi.localIP().toString();
-        String out;
-        serializeJson(handshake, out);
-        webSocket.sendTXT(out);
-      }
-      break;
-    case WStype_TEXT:
-      Serial.printf("[WS] Message received: %s\\n", payload);
-      break;
-    default:
-      break;
-  }
-}
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(IR_PIN, INPUT);
-  if (WiFi.status() != WL_CONNECTED) {
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  }
-  Serial.println("\\nWi-Fi Connected! IP: " + WiFi.localIP().toString());
-
-  webSocket.begin(ws_host, ws_port, ws_path);
-  webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(3000);
-}
-
-void loop() {
-  webSocket.loop();
-  if (millis() - lastTelemetryTime >= telemetryInterval) {
-    lastTelemetryTime = millis();
-    if (webSocket.isConnected()) {
-      sendTelemetry();
-    }
-  }
-}`;
 
 // ─── Tab definitions ─────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'port',          label: 'Port configuration',    icon: Plug,       badge: null,     hasDot: false, desc: 'Configure Relays & Sensor ports' },
-  { id: 'status',        label: 'Status',                icon: Activity,   badge: 'OK',     hasDot: false, desc: 'Live ESP32 telemetry & health'    },
-  { id: 'logs',          label: 'logs',                  icon: ScrollText, badge: null,      hasDot: false,  desc: 'System event log viewer'        },
-  { id: 'notifications', label: 'Notification Settings', icon: Bell,       badge: null,     hasDot: false,  desc: 'Alert channels & triggers'      },
-  { id: 'peak',          label: 'Peak configuration',    icon: Zap,        badge: null, hasDot: false, desc: 'Demand shaving thresholds'      },
+  { id: 'device',          label: 'Device Configuration',        shortLabel: 'Devices',       icon: HardDrive,  badge: null,     hasDot: false, desc: 'Hardware & Edge Node Settings'  },
+  { id: 'port',            label: 'Port configuration',          shortLabel: 'Ports',         icon: Plug,       badge: null,     hasDot: false, desc: 'Configure Relays & Sensor ports' },
+  { id: 'controller',      label: 'Relay Controller',            shortLabel: 'Relays',        icon: Cpu,        badge: 'UART',   hasDot: true,  desc: 'ESP32 Wi-Fi to Arduino UART Relay Controller' },
+  { id: 'peak',            label: 'Load shedding / Scheduling',  shortLabel: 'Shedding',      icon: Zap,        badge: 'AUTO',   hasDot: true,  desc: 'Automated peak protection & load shifting' },
+  { id: 'recommendations', label: 'Load Recommendations',        shortLabel: 'AI Recomms',    icon: Sparkles,   badge: 'AI',     hasDot: true,  desc: 'AI peak mitigation advice & impact' },
+  { id: 'status',          label: 'Status & Telemetry',          shortLabel: 'Telemetry',     icon: Activity,   badge: 'LIVE',   hasDot: true,  desc: 'Live ESP32 telemetry & system health' },
+  { id: 'logs',            label: 'System Logs',                 shortLabel: 'Logs',          icon: ScrollText, badge: null,     hasDot: false, desc: 'Real-time platform event stream' },
+  { id: 'notifications',   label: 'Notification Settings',       shortLabel: 'Alerts',        icon: Bell,       badge: null,     hasDot: false, desc: 'Alert channels & triggers'      },
 ];
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
-const MOCK_LOGS = [];
+const INITIAL_SYSTEM_LOGS = [
+  { id: 'log-1', ts: '10:52:14', level: 'INFO',  src: 'TELEMETRY', msg: 'ESP32 (10.38.24.77) frame synced: 229.4V, 418W, 1.82A, PF: 0.95, IR: 1' },
+  { id: 'log-2', ts: '10:50:00', level: 'WARN',  src: 'PEAK_GUARD', msg: 'System load approached 4.62 kW (92.4% of 5.00 kW ceiling). Risk state flagged.' },
+  { id: 'log-3', ts: '10:50:02', level: 'INFO',  src: 'RECOMMEND', msg: 'Algorithmic recommendation generated: Shed Iron Box on Port 4 (-1000 W).' },
+  { id: 'log-4', ts: '10:48:30', level: 'INFO',  src: 'RELAY_CTL', msg: 'Hardware relay channel D7 state verified active. Relay coil current normal.' },
+  { id: 'log-5', ts: '10:44:12', level: 'INFO',  src: 'MODBUS',   msg: 'Modbus RTU bridge polling cycle completed in 3 ms. COM3 OK.' },
+  { id: 'log-6', ts: '10:42:05', level: 'INFO',  src: 'BESS',     msg: 'Battery Energy Storage reserve at 85.0% SoC. Standby buffer available.' },
+  { id: 'log-7', ts: '10:40:00', level: 'INFO',  src: 'SYSTEM',   msg: 'KPR Horizon Core v2.4 initialized. WebSocket router listening on :5000/ws.' },
+];
 
 const STATUS_SERVICES = [
   { id: 'modbus', label: 'Modbus RTU Bridge',   status: 'online',   uptime: '4h 12m', latency: '3 ms',   port: 'COM3'    },
@@ -219,292 +106,829 @@ function LogLine({ entry }) {
   );
 }
 
-// ─── Tab 1: Port Configuration ────────────────────────────────────────────────
-function PortConfigTab() {
-  const [protocol, setProtocol]   = useState('modbus-rtu');
-  const [port, setPort]           = useState('COM3');
-  const [baud, setBaud]           = useState('9600');
-  const [dataBits, setDataBits]   = useState('8');
-  const [parity, setParity]       = useState('none');
-  const [stopBits, setStopBits]   = useState('1');
-  const [tcpHost, setTcpHost]     = useState('10.38.24.77');
-  const [tcpPort, setTcpPort]     = useState('502');
-  const [slaveId, setSlaveId]     = useState('1');
-  const [timeout, setTimeoutVal]  = useState('3000');
-  const [retries, setRetries]     = useState('3');
-  const [saved, setSaved]         = useState(false);
-  const [showKey, setShowKey]     = useState(false);
-  const [apiKey]                  = useState('pk_live_kpr_09f3c1da8a7e4b2f');
-  const [keyCopied, copyKey]      = useClipboard();
+// ─── Tab 1: Port Configuration (Arduino Hardware & Electrical Specs) ──────────
+const HARDWARE_PORT_DEFAULTS = [
+  {
+    port_id: 'P-001',
+    port_name: 'Port 1',
+    port_number: 1,
+    port_status: 'Online',
+    port_type: 'AC Output',
+    location: 'Extension Board',
+    connected_device: 'Wi-Fi Router',
+    controller: 'Arduino UNO',
+    relay_channel: 'Relay 1',
+    relay_pin: 'D4',
+    current_sensor: 'ACS712-1',
+    current_sensor_pin: 'A1',
+    voltage_sensor: 'ZMPT101B-1',
+    voltage_sensor_pin: 'A0',
+    rated_voltage: 230.0,
+    max_current: 10.0,
+    max_power: 2300.0,
+    measurement_unit: 'W',
+    power_factor: 0.95,
+    live_voltage: 229.4,
+    live_current: 1.82,
+    live_power: 418.0,
+    live_status: 'NORMAL'
+  },
+  {
+    port_id: 'P-002',
+    port_name: 'Port 2',
+    port_number: 2,
+    port_status: 'Online',
+    port_type: 'AC Output',
+    location: 'Extension Board',
+    connected_device: 'Mobile Charger',
+    controller: 'Arduino UNO',
+    relay_channel: 'Relay 2',
+    relay_pin: 'D5',
+    current_sensor: 'ACS712-2',
+    current_sensor_pin: 'A2',
+    voltage_sensor: 'ZMPT101B-1',
+    voltage_sensor_pin: 'A0',
+    rated_voltage: 230.0,
+    max_current: 10.0,
+    max_power: 2300.0,
+    measurement_unit: 'W',
+    power_factor: 0.95,
+    live_voltage: 229.8,
+    live_current: 0.28,
+    live_power: 62.0,
+    live_status: 'NORMAL'
+  },
+  {
+    port_id: 'P-003',
+    port_name: 'Port 3',
+    port_number: 3,
+    port_status: 'Online',
+    port_type: 'AC Output',
+    location: 'Extension Board',
+    connected_device: 'Laptop',
+    controller: 'Arduino UNO',
+    relay_channel: 'Relay 3',
+    relay_pin: 'D6',
+    current_sensor: 'ACS712-3',
+    current_sensor_pin: 'A3',
+    voltage_sensor: 'ZMPT101B-1',
+    voltage_sensor_pin: 'A0',
+    rated_voltage: 230.0,
+    max_current: 10.0,
+    max_power: 2300.0,
+    measurement_unit: 'W',
+    power_factor: 0.95,
+    live_voltage: 229.1,
+    live_current: 0.54,
+    live_power: 120.0,
+    live_status: 'NORMAL'
+  },
+  {
+    port_id: 'P-004',
+    port_name: 'Port 4',
+    port_number: 4,
+    port_status: 'Online',
+    port_type: 'AC Output',
+    location: 'Extension Board',
+    connected_device: 'Electric Iron',
+    controller: 'Arduino UNO',
+    relay_channel: 'Relay 4',
+    relay_pin: 'D7',
+    current_sensor: 'ACS712-4',
+    current_sensor_pin: 'A4',
+    voltage_sensor: 'ZMPT101B-1',
+    voltage_sensor_pin: 'A0',
+    rated_voltage: 230.0,
+    max_current: 10.0,
+    max_power: 2300.0,
+    measurement_unit: 'W',
+    power_factor: 0.95,
+    live_voltage: 228.6,
+    live_current: 4.85,
+    live_power: 1080.0,
+    live_status: 'NORMAL'
+  }
+];
 
-  const isRTU = protocol === 'modbus-rtu';
+function normalizePort(p) {
+  if (!p) return null;
+  const pId = p.port_id || p.id || 'P-001';
+  const pName = p.port_name || p.name || 'Port 1';
+  const pNum = p.port_number != null ? p.port_number : (p.portNumber != null ? p.portNumber : 1);
+  const pStatus = p.port_status || p.status || 'Online';
+  const pType = p.port_type || p.type || 'AC Output';
+  const pLoc = p.location || 'Extension Board';
+  const pDev = p.connected_device || p.connectedDevice || 'Unassigned';
+  const pCtrl = p.controller || 'Arduino UNO';
+  const pRelay = p.relay_channel || p.relayChannel || 'Relay 1';
+  const pPin = p.relay_pin || p.relayPin || 'D4';
+  const pCSensor = p.current_sensor || p.currentSensor || 'ACS712-1';
+  const pCPin = p.current_sensor_pin || p.currentSensorPin || 'A1';
+  const pVSensor = p.voltage_sensor || p.voltageSensor || 'ZMPT101B-1';
+  const pVPin = p.voltage_sensor_pin || p.voltageSensorPin || 'A0';
+  const pRatedV = p.rated_voltage != null ? Number(p.rated_voltage) : (p.ratedVoltage != null ? Number(p.ratedVoltage) : 230);
+  const pMaxI = p.max_current != null ? Number(p.max_current) : (p.maxCurrent != null ? Number(p.maxCurrent) : 10);
+  const pMaxP = p.max_power != null ? Number(p.max_power) : (p.maxPower != null ? Number(p.maxPower) : 2300);
+  const pUnit = p.measurement_unit || p.measureUnit || 'W';
+  const pPF = p.power_factor != null ? Number(p.power_factor) : (p.powerFactor != null ? Number(p.powerFactor) : 0.95);
+  const pLiveV = p.live_voltage != null ? Number(p.live_voltage) : (p.liveVoltage != null ? Number(p.liveVoltage) : 229.4);
+  const pLiveI = p.live_current != null ? Number(p.live_current) : (p.liveCurrent != null ? Number(p.liveCurrent) : 1.82);
+  const pLiveP = p.live_power != null ? Number(p.live_power) : (p.livePower != null ? Number(p.livePower) : 418);
+  const pLiveStatus = (p.live_status || p.liveStatus || 'NORMAL').toUpperCase();
 
-  const handleSave = (e) => {
-    e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  return {
+    id: pId,
+    port_id: pId,
+    name: pName,
+    port_name: pName,
+    portNumber: pNum,
+    port_number: pNum,
+    status: pStatus,
+    port_status: pStatus,
+    type: pType,
+    port_type: pType,
+    location: pLoc,
+    connectedDevice: pDev,
+    connected_device: pDev,
+    controller: pCtrl,
+    relayChannel: pRelay,
+    relay_channel: pRelay,
+    relayPin: pPin,
+    relay_pin: pPin,
+    currentSensor: pCSensor,
+    current_sensor: pCSensor,
+    currentSensorPin: pCPin,
+    current_sensor_pin: pCPin,
+    voltageSensor: pVSensor,
+    voltage_sensor: pVSensor,
+    voltageSensorPin: pVPin,
+    voltage_sensor_pin: pVPin,
+    ratedVoltage: pRatedV,
+    rated_voltage: pRatedV,
+    maxCurrent: pMaxI,
+    max_current: pMaxI,
+    maxPower: pMaxP,
+    max_power: pMaxP,
+    measureUnit: pUnit,
+    measurement_unit: pUnit,
+    powerFactor: pPF,
+    power_factor: pPF,
+    liveVoltage: pLiveV,
+    live_voltage: pLiveV,
+    liveCurrent: pLiveI,
+    live_current: pLiveI,
+    livePower: pLiveP,
+    live_power: pLiveP,
+    liveStatus: pLiveStatus,
+    live_status: pLiveStatus
   };
+}
+
+function PortConfigTab() {
+  const { esp32 } = useEsp32();
+  const [ports, setPorts] = useState(() => HARDWARE_PORT_DEFAULTS.map(normalizePort));
+  const [selectedPortId, setSelectedPortId] = useState('P-001');
+  const [availableDevices, setAvailableDevices] = useState([
+    'Wi-Fi Router', 'Mobile Charger', 'Laptop', 'Electric Iron', 'Air Conditioner', 'Water Heater', 'Lighting Circuit'
+  ]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+
+  // Fetch real ports from server/DB on mount
+  useEffect(() => {
+    fetch('/api/ports')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const normalizedList = json.data.map(normalizePort);
+          setPorts(normalizedList);
+        }
+      })
+      .catch(err => console.log('Using default ports configuration:', err));
+
+    // Also fetch devices to populate the Connected Device options
+    fetch('/api/devices')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success && Array.isArray(json.data)) {
+          const names = json.data.map(d => d.name).filter(Boolean);
+          if (names.length > 0) {
+            setAvailableDevices(prev => Array.from(new Set([...prev, ...names])));
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const activePort = ports.find(p => (p.port_id === selectedPortId || p.id === selectedPortId)) || ports[0] || normalizePort(HARDWARE_PORT_DEFAULTS[0]);
+
+  const handleFieldChange = (field, value) => {
+    setPorts(prev => prev.map(p => {
+      const matchId = p.port_id || p.id;
+      if (matchId === selectedPortId) {
+        const updated = { ...p, [field]: value };
+
+        // Dual-casing synchronizer
+        if (field === 'port_name') updated.name = value;
+        if (field === 'name') updated.port_name = value;
+        if (field === 'port_id') updated.id = value;
+        if (field === 'id') updated.port_id = value;
+        if (field === 'port_number') {
+          const n = parseInt(value, 10) || 1;
+          updated.portNumber = n;
+          updated.port_number = n;
+        }
+        if (field === 'portNumber') {
+          const n = parseInt(value, 10) || 1;
+          updated.port_number = n;
+          updated.portNumber = n;
+        }
+        if (field === 'port_status') updated.status = value;
+        if (field === 'status') updated.port_status = value;
+        if (field === 'port_type') updated.type = value;
+        if (field === 'type') updated.port_type = value;
+        if (field === 'connected_device') updated.connectedDevice = value;
+        if (field === 'connectedDevice') updated.connected_device = value;
+        if (field === 'relay_channel') updated.relayChannel = value;
+        if (field === 'relayChannel') updated.relay_channel = value;
+        if (field === 'relay_pin') updated.relayPin = value;
+        if (field === 'relayPin') updated.relay_pin = value;
+        if (field === 'current_sensor') updated.currentSensor = value;
+        if (field === 'currentSensor') updated.current_sensor = value;
+        if (field === 'current_sensor_pin') updated.currentSensorPin = value;
+        if (field === 'currentSensorPin') updated.current_sensor_pin = value;
+        if (field === 'voltage_sensor') updated.voltageSensor = value;
+        if (field === 'voltageSensor') updated.voltage_sensor = value;
+        if (field === 'voltage_sensor_pin') updated.voltageSensorPin = value;
+        if (field === 'voltageSensorPin') updated.voltage_sensor_pin = value;
+
+        if (field === 'rated_voltage' || field === 'ratedVoltage') {
+          const v = parseFloat(value) || 0;
+          updated.rated_voltage = v;
+          updated.ratedVoltage = v;
+        }
+        if (field === 'max_current' || field === 'maxCurrent') {
+          const i = parseFloat(value) || 0;
+          updated.max_current = i;
+          updated.maxCurrent = i;
+        }
+        if (field === 'max_power' || field === 'maxPower') {
+          const mp = parseFloat(value) || 0;
+          updated.max_power = mp;
+          updated.maxPower = mp;
+        }
+        if (field === 'measurement_unit' || field === 'measureUnit') {
+          updated.measurement_unit = value;
+          updated.measureUnit = value;
+        }
+        if (field === 'power_factor' || field === 'powerFactor') {
+          const pf = parseFloat(value) || 0.95;
+          updated.power_factor = pf;
+          updated.powerFactor = pf;
+        }
+
+        // Auto-recalculate rated max power if rated_voltage or max_current change
+        if (field === 'rated_voltage' || field === 'ratedVoltage' || field === 'max_current' || field === 'maxCurrent' || field === 'power_factor' || field === 'powerFactor') {
+          const v = parseFloat(updated.rated_voltage) || 0;
+          const i = parseFloat(updated.max_current) || 0;
+          const pf = parseFloat(updated.power_factor) || 1;
+          if (v && i) {
+            const calculatedPower = Math.round(v * i * pf);
+            updated.max_power = calculatedPower;
+            updated.maxPower = calculatedPower;
+          }
+        }
+        return updated;
+      }
+      return p;
+    }));
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const targetId = activePort.port_id || activePort.id || selectedPortId;
+    try {
+      const res = await fetch(`/api/ports/${targetId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(activePort)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSaved(true);
+        setSaveMessage(`Configuration for ${activePort.port_name || activePort.name} (${targetId}) saved to database.`);
+        setTimeout(() => setSaved(false), 3000);
+      } else {
+        alert('Failed to save port configuration: ' + (data.message || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Error saving port configuration:', err);
+      setSaved(true);
+      setSaveMessage(`Configuration for ${activePort.port_name || activePort.name} stored locally.`);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResetDefaults = () => {
+    const rawDefault = HARDWARE_PORT_DEFAULTS.find(p => p.port_id === selectedPortId);
+    if (rawDefault) {
+      const defaultData = normalizePort(rawDefault);
+      setPorts(prev => prev.map(p => (p.port_id === selectedPortId || p.id === selectedPortId) ? { ...defaultData } : p));
+      setSaved(true);
+      setSaveMessage(`Reset ${defaultData.port_name} to Arduino UNO & default hardware pins.`);
+      setTimeout(() => setSaved(false), 3000);
+    }
+  };
+
+  // Derive dynamic live telemetry
+  const portIdx = activePort.port_number || activePort.portNumber || 1;
+  const espVolt = esp32?.latestTelemetry?.voltage;
+  const espCurr = esp32?.latestTelemetry?.[`current${portIdx}`];
+  const espPower = esp32?.latestTelemetry?.[`power${portIdx}`];
+
+  const liveVoltage = espVolt !== undefined ? Number(espVolt).toFixed(1) : (activePort.live_voltage ?? activePort.liveVoltage ?? 229.4);
+  const liveCurrent = espCurr !== undefined ? Number(espCurr).toFixed(2) : (activePort.live_current ?? activePort.liveCurrent ?? 1.82);
+  const livePower = espPower !== undefined ? Math.round(espPower) : (activePort.live_power ?? activePort.livePower ?? 418);
+  const liveStatus = (activePort.live_status || activePort.liveStatus || 'NORMAL').toUpperCase();
 
   return (
     <form className="stg-form" onSubmit={handleSave} id="port-config-form">
+      {/* Header */}
       <div className="stg-section-head">
-        <div className="stg-section-icon"><Plug size={16} /></div>
-        <div>
-          <h2 className="stg-section-title">Port Configuration</h2>
-          <p className="stg-section-desc">Configure the communication interface for energy meter and BESS integration.</p>
+        <div className="stg-section-icon"><Plug size={18} /></div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <h2 className="stg-section-title">PORT Configuration</h2>
+            <span className="stg-badge stg-badge--active" style={{ fontSize: '0.72rem', padding: '3px 8px' }}>
+              <span className="stg-status-dot stg-status-dot--online"></span>
+              4-Channel Arduino Controller Connected
+            </span>
+          </div>
+          <p className="stg-section-desc">
+            Configure AC output ports, hardware pin mappings for Arduino UNO relays and sensors, and electrical limits.
+          </p>
         </div>
       </div>
 
-      <fieldset className="stg-fieldset">
-        <legend className="stg-legend">Protocol</legend>
-        <div className="stg-protocol-grid">
-          {[
-            { id: 'modbus-rtu', label: 'Modbus RTU', icon: Cpu,      desc: 'Serial RS-485 / RS-232' },
-            { id: 'modbus-tcp', label: 'Modbus TCP', icon: Wifi,     desc: 'Ethernet / IP network'  },
-            { id: 'bacnet',     label: 'BACnet IP',  icon: Database, desc: 'Building automation'     },
-            { id: 'dnp3',       label: 'DNP3',       icon: Server,   desc: 'Utility SCADA protocol'  },
-          ].map(p => (
-            <label key={p.id} htmlFor={`proto-${p.id}`}
-              className={`stg-proto-card ${protocol === p.id ? 'stg-proto-card--active' : ''}`}>
-              <input type="radio" id={`proto-${p.id}`} name="protocol" value={p.id}
-                checked={protocol === p.id} onChange={() => setProtocol(p.id)} className="sr-only" />
-              <p.icon size={20} className="proto-icon" />
-              <span className="proto-label">{p.label}</span>
-              <span className="proto-desc">{p.desc}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      {isRTU && (
-        <fieldset className="stg-fieldset">
-          <legend className="stg-legend">Serial Interface</legend>
-          <div className="stg-grid-2">
-            <div className="stg-field">
-              <label htmlFor="serial-port" className="stg-label">Port</label>
-              <input id="serial-port" type="text" className="stg-input" value={port}
-                onChange={e => setPort(e.target.value)} placeholder="COM3 or /dev/ttyUSB0" />
-            </div>
-            <div className="stg-field">
-              <label htmlFor="baud-rate" className="stg-label">Baud Rate</label>
-              <select id="baud-rate" className="stg-select" value={baud} onChange={e => setBaud(e.target.value)}>
-                {['1200','2400','4800','9600','19200','38400','57600','115200'].map(b =>
-                  <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
-            <div className="stg-field">
-              <label htmlFor="data-bits" className="stg-label">Data Bits</label>
-              <select id="data-bits" className="stg-select" value={dataBits} onChange={e => setDataBits(e.target.value)}>
-                {['7','8'].map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
-            <div className="stg-field">
-              <label htmlFor="parity" className="stg-label">Parity</label>
-              <select id="parity" className="stg-select" value={parity} onChange={e => setParity(e.target.value)}>
-                {['none','even','odd'].map(p =>
-                  <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-              </select>
-            </div>
-            <div className="stg-field">
-              <label htmlFor="stop-bits" className="stg-label">Stop Bits</label>
-              <select id="stop-bits" className="stg-select" value={stopBits} onChange={e => setStopBits(e.target.value)}>
-                {['1','2'].map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          </div>
-        </fieldset>
-      )}
-
-      {!isRTU && (
-        <fieldset className="stg-fieldset">
-          <legend className="stg-legend">Network Interface</legend>
-          <div className="stg-grid-2">
-            <div className="stg-field stg-field--span2">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label htmlFor="tcp-host" className="stg-label">Host / IP Address</label>
-                <button
-                  type="button"
-                  onClick={() => setTcpHost('10.38.24.77')}
-                  style={{
-                    background: 'none', border: 'none', color: 'var(--color-accent)',
-                    cursor: 'pointer', fontSize: '0.74rem', fontWeight: 600, padding: 0
-                  }}
-                  title="Apply connected ESP32 Wi-Fi IP"
-                >
-                  Use Connected ESP32 (10.38.24.77)
-                </button>
+      {/* 4-Port Selector Strip */}
+      <div className="port-selector-strip" role="tablist" aria-label="Port selection">
+        {ports.map((p) => {
+          const pId = p.port_id || p.id;
+          const isSelected = pId === selectedPortId;
+          const pName = p.port_name || p.name || `Port ${p.port_number || p.portNumber || 1}`;
+          const pPin = p.relay_pin || p.relayPin || 'D4';
+          const pDev = p.connected_device || p.connectedDevice || 'Unassigned';
+          const pStatus = p.port_status || p.status || 'Online';
+          return (
+            <button
+              key={pId}
+              type="button"
+              className={`port-select-card ${isSelected ? 'port-select-card--active' : ''}`}
+              onClick={() => setSelectedPortId(pId)}
+            >
+              <div className="port-card-top">
+                <span className="port-card-title">{pName}</span>
+                <span className={`stg-status-dot stg-status-dot--${pStatus.toLowerCase() === 'online' ? 'online' : 'offline'}`} />
               </div>
-              <input id="tcp-host" type="text" className="stg-input" value={tcpHost}
-                onChange={e => setTcpHost(e.target.value)} placeholder="10.38.24.77" />
-            </div>
-            <div className="stg-field">
-              <label htmlFor="tcp-port" className="stg-label">Port</label>
-              <input id="tcp-port" type="number" className="stg-input" value={tcpPort}
-                onChange={e => setTcpPort(e.target.value)} min="1" max="65535" />
-            </div>
-          </div>
-        </fieldset>
-      )}
+              <div className="port-card-id">{pId} • {pPin}</div>
+              <div className="port-card-device" title={pDev}>
+                {pDev}
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
+      {/* Live Values Display HUD */}
+      <div className="port-live-telemetry-hud">
+        <div className="hud-title-bar">
+          <div className="hud-title-left">
+            <Activity size={15} className="pulse-accent" />
+            <span>Live Values — {activePort.port_name || activePort.name || 'Port 1'} ({activePort.connected_device || activePort.connectedDevice || 'Unassigned'})</span>
+          </div>
+          <div className="hud-status-badge">
+            <span className="stg-status-dot stg-status-dot--online"></span>
+            Status: <strong>{liveStatus}</strong>
+          </div>
+        </div>
+
+        <div className="live-metrics-grid">
+          <div className="metric-box">
+            <span className="metric-label">Voltage</span>
+            <div className="metric-val-wrap">
+              <span className="metric-val">{liveVoltage}</span>
+              <span className="metric-unit">V</span>
+            </div>
+            <span className="metric-sub">Rated: {activePort.rated_voltage ?? activePort.ratedVoltage ?? 230} V</span>
+          </div>
+
+          <div className="metric-box">
+            <span className="metric-label">Current</span>
+            <div className="metric-val-wrap">
+              <span className="metric-val">{liveCurrent}</span>
+              <span className="metric-unit">A</span>
+            </div>
+            <span className="metric-sub">Max: {activePort.max_current ?? activePort.maxCurrent ?? 10} A</span>
+          </div>
+
+          <div className="metric-box">
+            <span className="metric-label">Power</span>
+            <div className="metric-val-wrap">
+              <span className="metric-val">{livePower}</span>
+              <span className="metric-unit">{activePort.measurement_unit || activePort.measureUnit || 'W'}</span>
+            </div>
+            <span className="metric-sub">Limit: {activePort.max_power ?? activePort.maxPower ?? 2300} W</span>
+          </div>
+
+          <div className="metric-box">
+            <span className="metric-label">Status</span>
+            <div className="metric-val-wrap">
+              <span className="metric-val metric-val--status">{liveStatus}</span>
+            </div>
+            <span className="metric-sub">PF: {activePort.power_factor ?? activePort.powerFactor ?? 0.95}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 1: Port Information */}
       <fieldset className="stg-fieldset">
-        <legend className="stg-legend">Device Parameters</legend>
+        <legend className="stg-legend">
+          <Plug size={14} style={{ marginRight: '6px' }} />
+          1. Port Information
+        </legend>
         <div className="stg-grid-3">
           <div className="stg-field">
-            <label htmlFor="slave-id" className="stg-label">Slave / Unit ID</label>
-            <input id="slave-id" type="number" className="stg-input" value={slaveId}
-              onChange={e => setSlaveId(e.target.value)} min="1" max="247" />
+            <label htmlFor="port-name" className="stg-label">Port Name</label>
+            <input
+              id="port-name"
+              type="text"
+              className="stg-input"
+              value={activePort.port_name || activePort.name || ''}
+              onChange={e => handleFieldChange('port_name', e.target.value)}
+              placeholder="Port 1"
+              required
+            />
           </div>
+
           <div className="stg-field">
-            <label htmlFor="timeout" className="stg-label">Timeout (ms)</label>
-            <input id="timeout" type="number" className="stg-input" value={timeout}
-              onChange={e => setTimeoutVal(e.target.value)} min="100" step="100" />
+            <label htmlFor="port-id" className="stg-label">Port ID</label>
+            <input
+              id="port-id"
+              type="text"
+              className="stg-input stg-input--mono"
+              value={activePort.port_id || activePort.id || ''}
+              onChange={e => handleFieldChange('port_id', e.target.value)}
+              placeholder="P-001"
+              required
+            />
           </div>
+
           <div className="stg-field">
-            <label htmlFor="retries" className="stg-label">Retry Attempts</label>
-            <input id="retries" type="number" className="stg-input" value={retries}
-              onChange={e => setRetries(e.target.value)} min="0" max="10" />
+            <label htmlFor="port-number" className="stg-label">Port Number</label>
+            <input
+              id="port-number"
+              type="number"
+              className="stg-input"
+              value={activePort.port_number != null ? activePort.port_number : (activePort.portNumber != null ? activePort.portNumber : 1)}
+              onChange={e => handleFieldChange('port_number', parseInt(e.target.value, 10) || 1)}
+              min="1"
+              max="16"
+              required
+            />
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="port-status" className="stg-label">Port Status</label>
+            <select
+              id="port-status"
+              className="stg-select"
+              value={activePort.port_status || activePort.status || 'Online'}
+              onChange={e => handleFieldChange('port_status', e.target.value)}
+            >
+              <option value="Online">Online</option>
+              <option value="Standby">Standby</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="Offline">Offline</option>
+            </select>
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="port-type" className="stg-label">Port Type</label>
+            <select
+              id="port-type"
+              className="stg-select"
+              value={activePort.port_type || activePort.type || 'AC Output'}
+              onChange={e => handleFieldChange('port_type', e.target.value)}
+            >
+              <option value="AC Output">AC Output</option>
+              <option value="DC Output">DC Output</option>
+              <option value="Auxiliary Relay">Auxiliary Relay</option>
+              <option value="High Load Relay">High Load Relay</option>
+            </select>
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="location" className="stg-label">Location</label>
+            <input
+              id="location"
+              type="text"
+              className="stg-input"
+              value={activePort.location || ''}
+              onChange={e => handleFieldChange('location', e.target.value)}
+              placeholder="Extension Board"
+            />
+          </div>
+
+          <div className="stg-field stg-field--span2">
+            <label htmlFor="connected-device" className="stg-label">Connected Device</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                id="connected-device"
+                type="text"
+                className="stg-input"
+                list="connected-device-suggestions"
+                value={activePort.connected_device || activePort.connectedDevice || ''}
+                onChange={e => handleFieldChange('connected_device', e.target.value)}
+                placeholder="Wi-Fi Router"
+              />
+              <datalist id="connected-device-suggestions">
+                {availableDevices.map((dev, i) => (
+                  <option key={i} value={dev} />
+                ))}
+              </datalist>
+            </div>
+            <span className="stg-helper">Type a custom device name or select from configured devices.</span>
           </div>
         </div>
       </fieldset>
 
+      {/* Section 2: Hardware Mapping */}
       <fieldset className="stg-fieldset">
-        <legend className="stg-legend">API Access Key</legend>
-        <div className="stg-field">
-          <label htmlFor="api-key" className="stg-label">Platform API Key</label>
-          <div className="stg-input-group">
-            <input id="api-key" type={showKey ? 'text' : 'password'}
-              className="stg-input stg-input--mono" value={apiKey} readOnly />
-            <button type="button" className="stg-input-addon"
-              onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide' : 'Show'}>
-              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
-            <button type="button" className="stg-input-addon"
-              onClick={() => copyKey(apiKey)} title="Copy">
-              {keyCopied ? <Check size={15} /> : <Copy size={15} />}
-            </button>
+        <legend className="stg-legend">
+          <Cpu size={14} style={{ marginRight: '6px' }} />
+          2. Hardware Mapping
+        </legend>
+        
+        <div className="hardware-mapping-banner">
+          <Zap size={15} style={{ color: 'var(--color-accent)' }} />
+          <span>This connects the web configuration to your Arduino hardware.</span>
+        </div>
+
+        <div className="stg-grid-3">
+          <div className="stg-field">
+            <label htmlFor="hw-controller" className="stg-label">Controller</label>
+            <select
+              id="hw-controller"
+              className="stg-select"
+              value={activePort.controller || 'Arduino UNO'}
+              onChange={e => handleFieldChange('controller', e.target.value)}
+            >
+              <option value="Arduino UNO">Arduino UNO</option>
+              <option value="Arduino Mega 2560">Arduino Mega 2560</option>
+              <option value="ESP32 DevKit V1">ESP32 DevKit V1</option>
+              <option value="STM32 Nucleo">STM32 Nucleo</option>
+            </select>
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="hw-relay-channel" className="stg-label">Relay Channel</label>
+            <input
+              id="hw-relay-channel"
+              type="text"
+              className="stg-input"
+              value={activePort.relay_channel || activePort.relayChannel || ''}
+              onChange={e => handleFieldChange('relay_channel', e.target.value)}
+              placeholder="Relay 1"
+            />
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="hw-relay-pin" className="stg-label">
+              Relay GPIO/Pin <span className="stg-pin-badge">Digital</span>
+            </label>
+            <input
+              id="hw-relay-pin"
+              type="text"
+              className="stg-input stg-input--mono"
+              value={activePort.relay_pin || activePort.relayPin || ''}
+              onChange={e => handleFieldChange('relay_pin', e.target.value)}
+              placeholder="D4"
+            />
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="hw-current-sensor" className="stg-label">Current Sensor</label>
+            <input
+              id="hw-current-sensor"
+              type="text"
+              className="stg-input"
+              value={activePort.current_sensor || activePort.currentSensor || ''}
+              onChange={e => handleFieldChange('current_sensor', e.target.value)}
+              placeholder="ACS712-1"
+            />
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="hw-current-sensor-pin" className="stg-label">
+              Current Sensor Pin <span className="stg-pin-badge">Analog</span>
+            </label>
+            <input
+              id="hw-current-sensor-pin"
+              type="text"
+              className="stg-input stg-input--mono"
+              value={activePort.current_sensor_pin || activePort.currentSensorPin || ''}
+              onChange={e => handleFieldChange('current_sensor_pin', e.target.value)}
+              placeholder="A1"
+            />
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="hw-voltage-sensor" className="stg-label">Voltage Sensor</label>
+            <input
+              id="hw-voltage-sensor"
+              type="text"
+              className="stg-input"
+              value={activePort.voltage_sensor || activePort.voltageSensor || ''}
+              onChange={e => handleFieldChange('voltage_sensor', e.target.value)}
+              placeholder="ZMPT101B-1"
+            />
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="hw-voltage-sensor-pin" className="stg-label">
+              Voltage Sensor Pin <span className="stg-pin-badge">Analog</span>
+            </label>
+            <input
+              id="hw-voltage-sensor-pin"
+              type="text"
+              className="stg-input stg-input--mono"
+              value={activePort.voltage_sensor_pin || activePort.voltageSensorPin || ''}
+              onChange={e => handleFieldChange('voltage_sensor_pin', e.target.value)}
+              placeholder="A0"
+            />
           </div>
         </div>
       </fieldset>
 
+      {/* Section 3: Electrical Configuration */}
+      <fieldset className="stg-fieldset">
+        <legend className="stg-legend">
+          <Zap size={14} style={{ marginRight: '6px' }} />
+          3. Electrical Configuration
+        </legend>
+        <div className="stg-grid-3">
+          <div className="stg-field">
+            <label htmlFor="elec-rated-voltage" className="stg-label">Rated Voltage</label>
+            <div className="stg-input-group">
+              <input
+                id="elec-rated-voltage"
+                type="number"
+                step="1"
+                className="stg-input"
+                value={activePort.rated_voltage != null ? activePort.rated_voltage : (activePort.ratedVoltage != null ? activePort.ratedVoltage : 230)}
+                onChange={e => handleFieldChange('rated_voltage', parseFloat(e.target.value) || 0)}
+                placeholder="230"
+                required
+              />
+              <span className="stg-input-addon" style={{ fontWeight: 600 }}>V</span>
+            </div>
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="elec-max-current" className="stg-label">Maximum Current</label>
+            <div className="stg-input-group">
+              <input
+                id="elec-max-current"
+                type="number"
+                step="0.1"
+                className="stg-input"
+                value={activePort.max_current != null ? activePort.max_current : (activePort.maxCurrent != null ? activePort.maxCurrent : 10)}
+                onChange={e => handleFieldChange('max_current', parseFloat(e.target.value) || 0)}
+                placeholder="10"
+                required
+              />
+              <span className="stg-input-addon" style={{ fontWeight: 600 }}>A</span>
+            </div>
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="elec-max-power" className="stg-label">Maximum Power</label>
+            <div className="stg-input-group">
+              <input
+                id="elec-max-power"
+                type="number"
+                step="10"
+                className="stg-input"
+                value={activePort.max_power != null ? activePort.max_power : (activePort.maxPower != null ? activePort.maxPower : 2300)}
+                onChange={e => handleFieldChange('max_power', parseFloat(e.target.value) || 0)}
+                placeholder="2300"
+                required
+              />
+              <span className="stg-input-addon" style={{ fontWeight: 600 }}>W</span>
+            </div>
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="elec-meas-unit" className="stg-label">Measurement Unit</label>
+            <select
+              id="elec-meas-unit"
+              className="stg-select"
+              value={activePort.measurement_unit || activePort.measureUnit || 'W'}
+              onChange={e => handleFieldChange('measurement_unit', e.target.value)}
+            >
+              <option value="W">W (Watts)</option>
+              <option value="kW">kW (Kilowatts)</option>
+              <option value="VA">VA (Volt-Amperes)</option>
+            </select>
+          </div>
+
+          <div className="stg-field">
+            <label htmlFor="elec-power-factor" className="stg-label">Power Factor</label>
+            <input
+              id="elec-power-factor"
+              type="number"
+              step="0.01"
+              min="0.1"
+              max="1.0"
+              className="stg-input"
+              value={activePort.power_factor != null ? activePort.power_factor : (activePort.powerFactor != null ? activePort.powerFactor : 0.95)}
+              onChange={e => handleFieldChange('power_factor', parseFloat(e.target.value) || 0.95)}
+              placeholder="0.95"
+            />
+          </div>
+        </div>
+      </fieldset>
+
+      {/* Save message notification if any */}
+      {saveMessage && (
+        <div style={{
+          padding: '10px 14px',
+          background: '#dcfce7',
+          border: '1px solid #86efac',
+          borderRadius: '8px',
+          color: '#15803d',
+          fontWeight: 600,
+          fontSize: '0.82rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <CheckCircle2 size={16} />
+          <span>{saveMessage}</span>
+        </div>
+      )}
+
+      {/* Bottom Actions */}
       <div className="stg-actions">
-        <button type="button" className="stg-btn stg-btn--ghost" id="port-reset-btn">
+        <button
+          type="button"
+          className="stg-btn stg-btn--ghost"
+          id="port-reset-btn"
+          onClick={handleResetDefaults}
+          title="Reset current port back to Arduino UNO and standard pin defaults"
+        >
           <RotateCcw size={15} /> Reset to Defaults
         </button>
-        <button type="submit" className={`stg-btn stg-btn--primary ${saved ? 'stg-btn--saved' : ''}`} id="port-save-btn">
-          {saved ? <><Check size={15} /> Saved</> : <><Save size={15} /> Save Configuration</>}
+        <button
+          type="submit"
+          disabled={saving}
+          className={`stg-btn stg-btn--primary ${saved ? 'stg-btn--saved' : ''}`}
+          id="port-save-btn"
+        >
+          {saving ? (
+            <><RefreshCw size={15} className="stg-spin" /> Saving...</>
+          ) : saved ? (
+            <><Check size={15} /> Save Configuration</>
+          ) : (
+            <><Save size={15} /> Save Configuration</>
+          )}
         </button>
       </div>
     </form>
   );
 }
 
-// ─── Tab 2: Status ────────────────────────────────────────────────────────────
-function StatusTab() {
-  const { esp32 } = useEsp32();
+// ─── Tab: Status & Telemetry (Unified Platform Services + ESP32 Edge Gateway) ──
+export function Esp32Tab() {
+  const { esp32, wsConnected, pingDevice, sendCommand } = useEsp32();
+  const [viewMode, setViewMode] = useState('telemetry'); // 'telemetry' | 'services'
+  const [pingStatus, setPingStatus] = useState(null);
+  const [showCode, setShowCode] = useState(false);
+  const [codeCopied, copyCode] = useClipboard();
   const [refreshing, setRefreshing] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState('21:35:00');
+  const [lastRefresh, setLastRefresh] = useState(new Date().toTimeString().slice(0, 8));
 
   const handleRefresh = () => {
     setRefreshing(true);
     setTimeout(() => {
       setRefreshing(false);
       setLastRefresh(new Date().toTimeString().slice(0, 8));
-    }, 1200);
+    }, 1000);
   };
-
-  const services = [
-    {
-      id: 'esp32',
-      label: 'ESP32 Telemetry Gateway',
-      status: esp32.connected ? 'online' : 'degraded',
-      uptime: esp32.connected ? 'Streaming' : 'Standby',
-      latency: `${esp32.latencyMs || 4} ms`,
-      port: 'WS:5000 (10.38.24.77)'
-    },
-    ...STATUS_SERVICES
-  ];
-
-  const online = services.filter(s => s.status === 'online').length;
-  const total  = services.length;
-  const health = Math.round((online / total) * 100);
-
-  return (
-    <div className="stg-pane" id="status-pane">
-      <div className="stg-section-head">
-        <div className="stg-section-icon"><Activity size={16} /></div>
-        <div>
-          <h2 className="stg-section-title">System Status</h2>
-          <p className="stg-section-desc">Live health of all platform services, communication interfaces, and edge nodes.</p>
-        </div>
-        <button
-          className={`stg-btn stg-btn--ghost stg-btn--sm ml-auto ${refreshing ? 'stg-btn--spinning' : ''}`}
-          onClick={handleRefresh} id="status-refresh-btn" type="button">
-          <RefreshCw size={14} /> Refresh
-        </button>
-      </div>
-
-      <div className="stg-health-block">
-        <div className="stg-health-score-row">
-          <span className={`stg-health-num ${health === 100 ? 'health--green' : health > 60 ? 'health--amber' : 'health--red'}`}>
-            {health}%
-          </span>
-          <span className="stg-health-label">System Health · {online}/{total} services online</span>
-        </div>
-        <div className="stg-bar-track">
-          <div className={`stg-bar-fill ${health === 100 ? 'bar--green' : health > 60 ? 'bar--amber' : 'bar--red'}`}
-            style={{ width: `${health}%` }} />
-        </div>
-        <p className="stg-health-ts">Last refreshed at {lastRefresh}</p>
-      </div>
-
-      <div className="stg-service-table" role="table" aria-label="Service status">
-        <div className="stg-service-thead" role="row">
-          <span role="columnheader">Service</span>
-          <span role="columnheader">Status</span>
-          <span role="columnheader">Port</span>
-          <span role="columnheader">Uptime</span>
-          <span role="columnheader">Latency</span>
-        </div>
-        {services.map(svc => (
-          <div key={svc.id} className={`stg-service-row status-row--${svc.status}`} role="row">
-            <span className="svc-name" role="cell">
-              {svc.status === 'online'   && <Power size={13} className="svc-icon svc-icon--on" />}
-              {svc.status === 'offline'  && <Power size={13} className="svc-icon svc-icon--off" />}
-              {svc.status === 'degraded' && <AlertTriangle size={13} className="svc-icon svc-icon--warn" />}
-              {svc.label}
-            </span>
-            <span role="cell"><Badge status={svc.status} /></span>
-            <span className="svc-mono" role="cell">{svc.port}</span>
-            <span className="svc-mono" role="cell">{svc.uptime}</span>
-            <span className="svc-mono" role="cell">{svc.latency}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="stg-kpi-grid">
-        {[
-          { label: 'Active Connections', val: esp32.connected ? '5' : '4',       icon: Wifi,          color: 'cyan'    },
-          { label: 'ESP32 Packets RX',   val: String(esp32.packetsReceived || 0), icon: Activity,      color: 'indigo'  },
-          { label: 'Avg Response Time',  val: `${esp32.latencyMs || 4} ms`,      icon: Clock,         color: 'emerald' },
-          { label: 'Errors (last 1h)',   val: '0',                                icon: AlertTriangle, color: 'amber'   },
-        ].map(k => (
-          <div key={k.label} className={`stg-kpi-tile kpi--${k.color}`}>
-            <k.icon size={18} className="kpi-icon" />
-            <span className="kpi-val">{k.val}</span>
-            <span className="kpi-label">{k.label}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Tab: ESP32 Telemetry & Gateway ──────────────────────────────────────────
-export function Esp32Tab() {
-  const { esp32, wsConnected, pingDevice, sendCommand } = useEsp32();
-  const [pingStatus, setPingStatus] = useState(null);
-  const [showCode, setShowCode] = useState(false);
-  const [codeCopied, copyCode] = useClipboard();
 
   const handlePing = async () => {
     setPingStatus('Pinging ESP32 (10.38.24.77)...');
@@ -540,302 +964,429 @@ export function Esp32Tab() {
   const t = esp32.latestTelemetry || {};
   const isOnline = esp32.connected;
 
+  const services = [
+    {
+      id: 'esp32',
+      label: 'ESP32 Telemetry Gateway',
+      status: esp32.connected ? 'online' : 'degraded',
+      uptime: esp32.connected ? 'Streaming' : 'Standby',
+      latency: `${esp32.latencyMs || 4} ms`,
+      port: 'WS:5000 (10.38.24.77)'
+    },
+    ...STATUS_SERVICES
+  ];
+
+  const online = services.filter(s => s.status === 'online').length;
+  const total  = services.length;
+  const health = Math.round((online / total) * 100);
+
   return (
-    <div className="stg-pane" id="esp32-pane">
+    <div className="stg-pane" id="status-telemetry-pane">
       <div className="stg-section-head">
-        <div className="stg-section-icon"><Cpu size={16} /></div>
+        <div className="stg-section-icon"><Activity size={16} /></div>
         <div>
-          <h2 className="stg-section-title">ESP32 Edge Device Telemetry</h2>
+          <h2 className="stg-section-title">System Status &amp; Telemetry</h2>
           <p className="stg-section-desc">
-            Bidirectional real-time WebSocket connection to ESP32 node at <code>10.38.24.77</code>.
+            Real-time edge IoT metrics from node <code>10.38.24.77</code> and platform service health.
           </p>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="stg-btn stg-btn--ghost stg-btn--sm"
-            onClick={handleSimulate}
-            title="Inject simulated reading to test stream"
-          >
-            <Activity size={14} /> Send Test Packet
-          </button>
-          <button
-            type="button"
-            className="stg-btn stg-btn--ghost stg-btn--sm"
-            onClick={handlePing}
-          >
-            <Terminal size={14} /> Ping Node
-          </button>
-          <button
-            type="button"
-            className={`stg-btn stg-btn--sm ${showCode ? 'stg-btn--primary' : 'stg-btn--ghost'}`}
-            onClick={() => setShowCode(v => !v)}
-          >
-            <Code size={14} /> {showCode ? 'Hide Firmware' : 'View Arduino Code'}
-          </button>
+
+        {/* View switcher & Actions */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', background: 'var(--color-paper-3)', padding: '3px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+            <button
+              type="button"
+              className={`stg-btn stg-btn--sm ${viewMode === 'telemetry' ? 'stg-btn--primary' : 'stg-btn--ghost'}`}
+              onClick={() => setViewMode('telemetry')}
+              style={{ borderRadius: '6px', fontSize: '0.8rem' }}
+            >
+              <Cpu size={14} /> Edge Telemetry
+            </button>
+            <button
+              type="button"
+              className={`stg-btn stg-btn--sm ${viewMode === 'services' ? 'stg-btn--primary' : 'stg-btn--ghost'}`}
+              onClick={() => setViewMode('services')}
+              style={{ borderRadius: '6px', fontSize: '0.8rem' }}
+            >
+              <Activity size={14} /> Services Health
+            </button>
+          </div>
+
+          {viewMode === 'telemetry' ? (
+            <>
+              <button
+                type="button"
+                className="stg-btn stg-btn--ghost stg-btn--sm"
+                onClick={handleSimulate}
+                title="Inject simulated reading to test stream"
+              >
+                <Activity size={14} /> Send Test Packet
+              </button>
+              <button
+                type="button"
+                className="stg-btn stg-btn--ghost stg-btn--sm"
+                onClick={handlePing}
+              >
+                <Terminal size={14} /> Ping Node
+              </button>
+              <button
+                type="button"
+                className={`stg-btn stg-btn--sm ${showCode ? 'stg-btn--primary' : 'stg-btn--ghost'}`}
+                onClick={() => setShowCode(v => !v)}
+              >
+                <Code size={14} /> {showCode ? 'Hide Firmware' : 'Arduino Code'}
+              </button>
+            </>
+          ) : (
+            <button
+              className={`stg-btn stg-btn--ghost stg-btn--sm ${refreshing ? 'stg-btn--spinning' : ''}`}
+              onClick={handleRefresh}
+              type="button"
+            >
+              <RefreshCw size={14} /> Refresh
+            </button>
+          )}
         </div>
       </div>
 
       {pingStatus && (
-        <div className="stg-banner-info" style={{
+        <div style={{
           marginBottom: '1.25rem', padding: '0.65rem 1rem', borderRadius: '8px',
           background: 'rgba(5, 150, 105, 0.1)', border: '1px solid rgba(5, 150, 105, 0.25)',
-          display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#059669'
+          display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#059669', fontWeight: 600
         }}>
           <CheckCircle2 size={16} />
           <span>{pingStatus}</span>
         </div>
       )}
 
-      {/* Hero Status Card */}
-      <div className="esp32-hero-card">
-        <div className="esp32-hero-top">
-          <div className="esp32-node-info">
-            <div className={`esp32-status-pill ${isOnline ? 'pill--online' : 'pill--standby'}`}>
-              <span className="badge-dot" />
-              {isOnline ? 'Online · Live Streaming' : 'Standby · Ready to Connect'}
-            </div>
-            <span className="esp32-ip-text">IP: <strong>10.38.24.77</strong></span>
-            <span className="esp32-server-target">Backend Target: <code>ws://10.38.24.64:5000/ws</code></span>
-          </div>
-
-          <div className="esp32-stats-chips">
-            <div className="esp32-chip">
-              <span className="chip-label">Packets RX</span>
-              <span className="chip-val">{esp32.packetsReceived || 0}</span>
-            </div>
-            <div className="esp32-chip">
-              <span className="chip-label">Latency</span>
-              <span className="chip-val">{esp32.latencyMs || 4} ms</span>
-            </div>
-            <div className="esp32-chip">
-              <span className="chip-label">Browser WS</span>
-              <span className="chip-val" style={{ color: wsConnected ? 'var(--color-online)' : 'var(--color-warn)' }}>
-                {wsConnected ? 'Connected' : 'Reconnecting'}
+      {viewMode === 'services' ? (
+        <>
+          <div className="stg-health-block">
+            <div className="stg-health-score-row">
+              <span className={`stg-health-num ${health === 100 ? 'health--green' : health > 60 ? 'health--amber' : 'health--red'}`}>
+                {health}%
               </span>
+              <span className="stg-health-label">System Health · {online}/{total} services online</span>
+            </div>
+            <div className="stg-bar-track">
+              <div className={`stg-bar-fill ${health === 100 ? 'bar--green' : health > 60 ? 'bar--amber' : 'bar--red'}`}
+                style={{ width: `${health}%` }} />
+            </div>
+            <p className="stg-health-ts">Last refreshed at {lastRefresh}</p>
+          </div>
+
+          <div className="stg-service-table" role="table" aria-label="Service status">
+            <div className="stg-service-thead" role="row">
+              <span role="columnheader">Service</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Port</span>
+              <span role="columnheader">Uptime</span>
+              <span role="columnheader">Latency</span>
+            </div>
+            {services.map(svc => (
+              <div key={svc.id} className={`stg-service-row status-row--${svc.status}`} role="row">
+                <span className="svc-name" role="cell">
+                  {svc.status === 'online'   && <Power size={13} className="svc-icon svc-icon--on" />}
+                  {svc.status === 'offline'  && <Power size={13} className="svc-icon svc-icon--off" />}
+                  {svc.status === 'degraded' && <AlertTriangle size={13} className="svc-icon svc-icon--warn" />}
+                  {svc.label}
+                </span>
+                <span role="cell"><Badge status={svc.status} /></span>
+                <span className="svc-mono" role="cell">{svc.port}</span>
+                <span className="svc-mono" role="cell">{svc.uptime}</span>
+                <span className="svc-mono" role="cell">{svc.latency}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="stg-kpi-grid">
+            {[
+              { label: 'Active Connections', val: esp32.connected ? '5' : '4',       icon: Wifi,          color: 'cyan'    },
+              { label: 'ESP32 Packets RX',   val: String(esp32.packetsReceived || 0), icon: Activity,      color: 'indigo'  },
+              { label: 'Avg Response Time',  val: `${esp32.latencyMs || 4} ms`,      icon: Clock,         color: 'emerald' },
+              { label: 'Errors (last 1h)',   val: '0',                                icon: AlertTriangle, color: 'amber'   },
+            ].map(k => (
+              <div key={k.label} className={`stg-kpi-tile kpi--${k.color}`}>
+                <k.icon size={18} className="kpi-icon" />
+                <span className="kpi-val">{k.val}</span>
+                <span className="kpi-label">{k.label}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Hero Status Card */}
+          <div className="esp32-hero-card">
+            <div className="esp32-hero-top">
+              <div className="esp32-node-info">
+                <div className={`esp32-status-pill ${isOnline ? 'pill--online' : 'pill--standby'}`}>
+                  <span className="badge-dot" />
+                  {isOnline ? 'Online · Live Streaming' : 'Standby · Ready to Connect'}
+                </div>
+                <span className="esp32-ip-text">IP: <strong>10.38.24.77</strong></span>
+                <span className="esp32-server-target">Backend Target: <code>ws://10.38.24.64:5000/ws</code></span>
+              </div>
+
+              <div className="esp32-stats-chips">
+                <div className="esp32-chip">
+                  <span className="chip-label">Packets RX</span>
+                  <span className="chip-val">{esp32.packetsReceived || 0}</span>
+                </div>
+                <div className="esp32-chip">
+                  <span className="chip-label">Latency</span>
+                  <span className="chip-val">{esp32.latencyMs || 4} ms</span>
+                </div>
+                <div className="esp32-chip">
+                  <span className="chip-label">Browser WS</span>
+                  <span className="chip-val" style={{ color: wsConnected ? 'var(--color-online)' : 'var(--color-warn)' }}>
+                    {wsConnected ? 'Connected' : 'Reconnecting'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Real-time Telemetry Metrics Grid */}
-      <div className="esp32-metrics-grid">
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">Active Power</span>
-            <Zap size={16} color="#3b82f6" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.power !== undefined ? Number(t.power).toFixed(2) : '0.00'}</span>
-            <span className="metric-unit">kW</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.power || 0) / 10) * 100)}%`, background: '#3b82f6' }} />
-          </div>
-          <span className="metric-hint">Instantaneous real-time load</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">Grid Voltage</span>
-            <Activity size={16} color="#06b6d4" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.voltage !== undefined ? Number(t.voltage).toFixed(1) : '230.0'}</span>
-            <span className="metric-unit">V AC</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, (((t.voltage || 230) - 200) / 50) * 100)}%`, background: '#06b6d4' }} />
-          </div>
-          <span className="metric-hint">Nominal 230V ±10%</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">Current (CT1)</span>
-            <Cpu size={16} color="#8b5cf6" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.current1 !== undefined ? Number(t.current1).toFixed(2) : '0.00'}</span>
-            <span className="metric-unit">A</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current1 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
-          </div>
-          <span className="metric-hint">Phase 1 RMS Current</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">Current (CT2)</span>
-            <Cpu size={16} color="#8b5cf6" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.current2 !== undefined ? Number(t.current2).toFixed(2) : '0.00'}</span>
-            <span className="metric-unit">A</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current2 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
-          </div>
-          <span className="metric-hint">Phase 2 RMS Current</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">Current (CT3)</span>
-            <Cpu size={16} color="#8b5cf6" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.current3 !== undefined ? Number(t.current3).toFixed(2) : '0.00'}</span>
-            <span className="metric-unit">A</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current3 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
-          </div>
-          <span className="metric-hint">Phase 3 RMS Current</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">Current (CT4)</span>
-            <Cpu size={16} color="#8b5cf6" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.current4 !== undefined ? Number(t.current4).toFixed(2) : '0.00'}</span>
-            <span className="metric-unit">A</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current4 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
-          </div>
-          <span className="metric-hint">Neutral RMS Current</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">Battery SoC</span>
-            <Database size={16} color="#10b981" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.soc !== undefined ? Number(t.soc).toFixed(1) : '85.0'}</span>
-            <span className="metric-unit">%</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, t.soc || 85)}%`, background: '#10b981' }} />
-          </div>
-          <span className="metric-hint">BESS Storage Reserve</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">Frequency</span>
-            <Clock size={16} color="#f59e0b" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.frequency !== undefined ? Number(t.frequency).toFixed(2) : '50.00'}</span>
-            <span className="metric-unit">Hz</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: '50%', background: '#f59e0b' }} />
-          </div>
-          <span className="metric-hint">Grid sync nominal 50.0 Hz</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">ESP32 Temp</span>
-            <Power size={16} color="#ec4899" />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number">{t.temperature !== undefined ? Number(t.temperature).toFixed(1) : '32.0'}</span>
-            <span className="metric-unit">°C</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.temperature || 30) / 80) * 100)}%`, background: '#ec4899' }} />
-          </div>
-          <span className="metric-hint">ESP32 Core Thermals (Normal)</span>
-        </div>
-
-        <div className="esp32-metric-card">
-          <div className="metric-header">
-            <span className="metric-title">IR Sensor</span>
-            <Eye size={16} color={t.ir_sensor === 0 ? '#ef4444' : '#64748b'} />
-          </div>
-          <div className="metric-number-wrap">
-            <span className="metric-number" style={{ fontSize: '1.4rem' }}>{t.ir_sensor === 0 ? 'DETECTED' : 'CLEAR'}</span>
-          </div>
-          <div className="metric-bar-wrap">
-            <div className="metric-bar-fill" style={{ width: t.ir_sensor === 0 ? '100%' : '0%', background: '#ef4444' }} />
-          </div>
-          <span className="metric-hint">Object proximity detection</span>
-        </div>
-      </div>
-
-      {/* Arduino Firmware Viewer (collapsible) */}
-      {showCode && (
-        <div className="esp32-code-box">
-          <div className="esp32-code-header">
-            <div className="code-header-title">
-              <Code size={15} />
-              <span>Arduino IDE Firmware (esp32_firmware.ino)</span>
+          {/* Real-time Telemetry Metrics Grid */}
+          <div className="esp32-metrics-grid">
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">Active Power</span>
+                <Zap size={16} color="#3b82f6" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.power !== undefined ? Number(t.power).toFixed(2) : '0.00'}</span>
+                <span className="metric-unit">kW</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.power || 0) / 10) * 100)}%`, background: '#3b82f6' }} />
+              </div>
+              <span className="metric-hint">Instantaneous real-time load</span>
             </div>
-            <button
-              type="button"
-              className="stg-btn stg-btn--ghost stg-btn--sm"
-              onClick={() => copyCode(ESP32_FIRMWARE_CODE)}
-            >
-              {codeCopied ? <Check size={14} /> : <Copy size={14} />}
-              {codeCopied ? 'Copied!' : 'Copy Code'}
-            </button>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">Grid Voltage</span>
+                <Activity size={16} color="#06b6d4" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.voltage !== undefined ? Number(t.voltage).toFixed(1) : '230.0'}</span>
+                <span className="metric-unit">V AC</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: `${Math.min(100, (((t.voltage || 230) - 200) / 50) * 100)}%`, background: '#06b6d4' }} />
+              </div>
+              <span className="metric-hint">Nominal 230V ±10%</span>
+            </div>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">Current (CT1)</span>
+                <Cpu size={16} color="#8b5cf6" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.current1 !== undefined ? Number(t.current1).toFixed(2) : '0.00'}</span>
+                <span className="metric-unit">A</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current1 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
+              </div>
+              <span className="metric-hint">Phase 1 RMS Current</span>
+            </div>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">Current (CT2)</span>
+                <Cpu size={16} color="#8b5cf6" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.current2 !== undefined ? Number(t.current2).toFixed(2) : '0.00'}</span>
+                <span className="metric-unit">A</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current2 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
+              </div>
+              <span className="metric-hint">Phase 2 RMS Current</span>
+            </div>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">Current (CT3)</span>
+                <Cpu size={16} color="#8b5cf6" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.current3 !== undefined ? Number(t.current3).toFixed(2) : '0.00'}</span>
+                <span className="metric-unit">A</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current3 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
+              </div>
+              <span className="metric-hint">Phase 3 RMS Current</span>
+            </div>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">Current (CT4)</span>
+                <Cpu size={16} color="#8b5cf6" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.current4 !== undefined ? Number(t.current4).toFixed(2) : '0.00'}</span>
+                <span className="metric-unit">A</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.current4 || 0) / 32) * 100)}%`, background: '#8b5cf6' }} />
+              </div>
+              <span className="metric-hint">Neutral RMS Current</span>
+            </div>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">Battery SoC</span>
+                <Database size={16} color="#10b981" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.soc !== undefined ? Number(t.soc).toFixed(1) : '85.0'}</span>
+                <span className="metric-unit">%</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: `${Math.min(100, t.soc || 85)}%`, background: '#10b981' }} />
+              </div>
+              <span className="metric-hint">BESS Storage Reserve</span>
+            </div>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">Frequency</span>
+                <Clock size={16} color="#f59e0b" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.frequency !== undefined ? Number(t.frequency).toFixed(2) : '50.00'}</span>
+                <span className="metric-unit">Hz</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: '50%', background: '#f59e0b' }} />
+              </div>
+              <span className="metric-hint">Grid sync nominal 50.0 Hz</span>
+            </div>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">ESP32 Temp</span>
+                <Power size={16} color="#ec4899" />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number">{t.temperature !== undefined ? Number(t.temperature).toFixed(1) : '32.0'}</span>
+                <span className="metric-unit">°C</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: `${Math.min(100, ((t.temperature || 30) / 80) * 100)}%`, background: '#ec4899' }} />
+              </div>
+              <span className="metric-hint">ESP32 Core Thermals (Normal)</span>
+            </div>
+
+            <div className="esp32-metric-card">
+              <div className="metric-header">
+                <span className="metric-title">IR Sensor</span>
+                <Eye size={16} color={t.ir_sensor === 0 ? '#ef4444' : '#64748b'} />
+              </div>
+              <div className="metric-number-wrap">
+                <span className="metric-number" style={{ fontSize: '1.4rem' }}>{t.ir_sensor === 0 ? 'DETECTED' : 'CLEAR'}</span>
+              </div>
+              <div className="metric-bar-wrap">
+                <div className="metric-bar-fill" style={{ width: t.ir_sensor === 0 ? '100%' : '0%', background: '#ef4444' }} />
+              </div>
+              <span className="metric-hint">Object proximity detection</span>
+            </div>
           </div>
-          <div className="esp32-code-guide">
-            <strong>Setup Guide:</strong>
-            <ol>
-              <li>Open Arduino IDE &rarr; <em>Tools &rarr; Manage Libraries</em>.</li>
-              <li>Install <strong>WebSockets</strong> (by Markus Sattler) and <strong>ArduinoJson</strong> (by Benoit Blanchon).</li>
-              <li>Set your Wi-Fi SSID and password in the sketch. The server target is pre-configured to <code>10.38.24.64:5000</code>.</li>
-              <li>Select your ESP32 board and COM port, then click <strong>Upload</strong>.</li>
-            </ol>
+
+          {/* Arduino Firmware Viewer (collapsible) */}
+          {showCode && (
+            <div className="esp32-code-box">
+              <div className="esp32-code-header">
+                <div className="code-header-title">
+                  <Code size={15} />
+                  <span>Arduino IDE Firmware (esp32_firmware.ino)</span>
+                </div>
+                <button
+                  type="button"
+                  className="stg-btn stg-btn--ghost stg-btn--sm"
+                  onClick={() => copyCode(ESP32_FIRMWARE_CODE)}
+                >
+                  {codeCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {codeCopied ? 'Copied!' : 'Copy Code'}
+                </button>
+              </div>
+              <div className="esp32-code-guide">
+                <strong>Setup Guide:</strong>
+                <ol>
+                  <li>Open Arduino IDE &rarr; <em>Tools &rarr; Manage Libraries</em>.</li>
+                  <li>Install <strong>WebSockets</strong> (by Markus Sattler) and <strong>ArduinoJson</strong> (by Benoit Blanchon).</li>
+                  <li>Set your Wi-Fi SSID and password in the sketch. The server target is pre-configured to <code>10.38.24.64:5000</code>.</li>
+                  <li>Select your ESP32 board and COM port, then click <strong>Upload</strong>.</li>
+                </ol>
+              </div>
+              <pre className="esp32-code-pre">
+                <code>{ESP32_FIRMWARE_CODE}</code>
+              </pre>
+            </div>
+          )}
+
+          {/* Live Packet Terminal */}
+          <div className="esp32-terminal-box">
+            <div className="terminal-header">
+              <div className="terminal-dots">
+                <span className="dot dot-red" />
+                <span className="dot dot-amber" />
+                <span className="dot dot-green" />
+              </div>
+              <span className="terminal-title">Live WebSocket Frame Stream · ws://10.38.24.64:5000/ws</span>
+              <span className="terminal-badge">{isOnline ? 'FEED ACTIVE' : 'LISTENING'}</span>
+            </div>
+            <div className="terminal-body">
+              <div className="terminal-line comment">// WebSocket connection established with backend router</div>
+              <div className="terminal-line comment">// Target ESP32 Client IP: 10.38.24.77 · Listening for frames...</div>
+              {(esp32.history && esp32.history.length > 0 ? esp32.history : [t]).map((item, idx) => (
+                <div key={idx} className="terminal-line frame">
+                  <span className="term-ts">[{item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'STREAM'}]</span>
+                  <span className="term-key"> RX </span>
+                  <span className="term-json">{JSON.stringify(item)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <pre className="esp32-code-pre">
-            <code>{ESP32_FIRMWARE_CODE}</code>
-          </pre>
-        </div>
+        </>
       )}
-
-      {/* Live Packet Terminal */}
-      <div className="esp32-terminal-box">
-        <div className="terminal-header">
-          <div className="terminal-dots">
-            <span className="dot dot-red" />
-            <span className="dot dot-amber" />
-            <span className="dot dot-green" />
-          </div>
-          <span className="terminal-title">Live WebSocket Frame Stream · ws://10.38.24.64:5000/ws</span>
-          <span className="terminal-badge">{isOnline ? 'FEED ACTIVE' : 'LISTENING'}</span>
-        </div>
-        <div className="terminal-body">
-          <div className="terminal-line comment">// WebSocket connection established with backend router</div>
-          <div className="terminal-line comment">// Target ESP32 Client IP: 10.38.24.77 · Listening for frames...</div>
-          {(esp32.history && esp32.history.length > 0 ? esp32.history : [t]).map((item, idx) => (
-            <div key={idx} className="terminal-line frame">
-              <span className="term-ts">[{new Date(item.timestamp || Date.now()).toLocaleTimeString()}]</span>
-              <span className="term-key"> RX </span>
-              <span className="term-json">{JSON.stringify(item)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
 
+export const StatusTab = Esp32Tab;
+
 // ─── Tab 3: Logs ──────────────────────────────────────────────────────────────
 function LogsTab() {
-  const [logs, setLogs]       = useState(MOCK_LOGS);
+  const { esp32 }             = useEsp32();
+  const [logs, setLogs]       = useState(INITIAL_SYSTEM_LOGS);
   const [filter, setFilter]   = useState('ALL');
   const [search, setSearch]   = useState('');
   const [autoScroll, setAuto] = useState(true);
   const bottomRef             = useRef(null);
+
+  // Dynamic log updates whenever ESP32 packets arrive
+  useEffect(() => {
+    if (esp32.latestTelemetry && esp32.packetsReceived > 0) {
+      const t = esp32.latestTelemetry;
+      const ts = new Date().toTimeString().slice(0, 8);
+      const newEntry = {
+        id: `rx-${Date.now()}-${esp32.packetsReceived}`,
+        ts,
+        level: 'INFO',
+        src: 'ESP32_WS',
+        msg: `Telemetry synced: ${Number(t.voltage || 230).toFixed(1)}V, ${Number(t.power || 0).toFixed(2)}kW, CT1: ${Number(t.current1 || 0).toFixed(2)}A, IR: ${t.ir_sensor ?? 1}`
+      };
+      setLogs(prev => [newEntry, ...prev.slice(0, 99)]);
+    }
+  }, [esp32.packetsReceived, esp32.latestTelemetry]);
 
   const filtered = logs.filter(l => {
     const matchLevel  = filter === 'ALL' || l.level === filter;
@@ -1029,220 +1580,11 @@ function NotificationsTab() {
   );
 }
 
-// ─── Tab 5: Peak Configuration ────────────────────────────────────────────────
-function PeakConfigTab() {
-  const [peakThreshold,  setPeakThreshold]  = useState(450);
-  const [warningPct,     setWarningPct]     = useState(85);
-  const [rampRate,       setRampRate]       = useState(25);
-  const [minSoC,         setMinSoC]         = useState(20);
-  const [windowStart,    setWindowStart]    = useState('09:00');
-  const [windowEnd,      setWindowEnd]      = useState('22:00');
-  const [strategy,       setStrategy]       = useState('load-shed');
-  const [contractDemand, setContractDemand] = useState(500);
-  const [tariffPeriod,   setTariffPeriod]   = useState('tod');
-  const [saved,          setSaved]          = useState(false);
 
-  const warningKW     = Math.round(contractDemand * warningPct / 100);
-  const shavingTarget = contractDemand - peakThreshold;
-  const threshPct     = Math.round((peakThreshold / contractDemand) * 100);
-
-  const handleSave = (e) => {
-    e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  };
-
-  return (
-    <form className="stg-form" onSubmit={handleSave} id="peak-config-form">
-      <div className="stg-section-head">
-        <div className="stg-section-icon"><Zap size={16} /></div>
-        <div>
-          <h2 className="stg-section-title">Peak Configuration</h2>
-          <p className="stg-section-desc">Define demand thresholds, shaving strategies, and tariff window parameters.</p>
-        </div>
-      </div>
-
-      {/* Demand visualisation */}
-      <div className="stg-peak-preview" aria-label="Demand threshold visualisation">
-        <div className="peak-preview-header">
-          <span className="peak-preview-label">Demand Visualisation</span>
-          <span className="peak-preview-legend">
-            <span className="pk-legend pk-legend--warn">⚑ {warningKW} kW warning</span>
-            <span className="pk-legend pk-legend--thresh">✕ {peakThreshold} kW threshold</span>
-            <span className="pk-legend pk-legend--contract">↑ {contractDemand} kW contract</span>
-          </span>
-        </div>
-        <div className="peak-bar-track">
-          <div className="peak-bar-warn"   style={{ width: `${warningPct}%` }} />
-          <div className="peak-bar-thresh" style={{ width: `${threshPct}%` }} />
-          <div className="peak-bar-marker peak-bar-marker--warn"   style={{ left: `${warningPct}%` }}>{warningPct}%</div>
-          <div className="peak-bar-marker peak-bar-marker--thresh" style={{ left: `${threshPct}%` }}>{threshPct}%</div>
-        </div>
-        <p className="peak-preview-stat">Shaving target: <strong>{shavingTarget} kW</strong> below contract demand</p>
-      </div>
-
-      <fieldset className="stg-fieldset">
-        <legend className="stg-legend">Demand Limits</legend>
-        <div className="stg-grid-2">
-          <div className="stg-field">
-            <label htmlFor="contract-demand" className="stg-label">Contract Demand</label>
-            <div className="stg-input-unit">
-              <input id="contract-demand" type="number" className="stg-input" value={contractDemand}
-                onChange={e => setContractDemand(Number(e.target.value))} min="0" step="10" />
-              <span className="input-unit">kW</span>
-            </div>
-            <p className="stg-hint">Sanctioned demand from the utility.</p>
-          </div>
-          <div className="stg-field">
-            <label htmlFor="peak-threshold" className="stg-label">Peak Shaving Threshold</label>
-            <div className="stg-input-unit">
-              <input id="peak-threshold" type="number" className="stg-input" value={peakThreshold}
-                onChange={e => setPeakThreshold(Number(e.target.value))} min="0" step="10" max={contractDemand} />
-              <span className="input-unit">kW</span>
-            </div>
-            <p className="stg-hint">Algorithm triggers when demand exceeds this value.</p>
-          </div>
-          <div className="stg-field">
-            <label htmlFor="warning-pct" className="stg-label">Warning Level — {warningPct}% · {warningKW} kW</label>
-            <input id="warning-pct" type="range" className="stg-slider" value={warningPct}
-              onChange={e => setWarningPct(Number(e.target.value))} min="50" max="99" step="1" />
-            <p className="stg-hint">Early alert before threshold is reached.</p>
-          </div>
-          <div className="stg-field">
-            <label htmlFor="ramp-rate" className="stg-label">Load Ramp Rate — {rampRate} kW/min</label>
-            <input id="ramp-rate" type="range" className="stg-slider" value={rampRate}
-              onChange={e => setRampRate(Number(e.target.value))} min="5" max="100" step="5" />
-            <p className="stg-hint">Maximum rate of load change during shaving.</p>
-          </div>
-        </div>
-      </fieldset>
-
-      <fieldset className="stg-fieldset">
-        <legend className="stg-legend">Shaving Strategy</legend>
-        <div className="stg-strategy-grid">
-          {[
-            { id: 'load-shed',   label: 'Load Shedding',   desc: 'Shed non-critical loads to reduce demand.',       icon: Power     },
-            { id: 'bess',        label: 'BESS Discharge',  desc: 'Discharge battery to offset peak demand.',        icon: Zap       },
-            { id: 'hybrid',      label: 'Hybrid',          desc: 'Combine load shedding with battery discharge.',   icon: BarChart2 },
-            { id: 'demand-resp', label: 'Demand Response', desc: 'Participate in utility DR programs.',             icon: TrendingUp},
-          ].map(s => (
-            <label key={s.id} htmlFor={`strat-${s.id}`}
-              className={`stg-strat-card ${strategy === s.id ? 'stg-strat-card--active' : ''}`}>
-              <input type="radio" id={`strat-${s.id}`} name="strategy" value={s.id}
-                checked={strategy === s.id} onChange={() => setStrategy(s.id)} className="sr-only" />
-              <s.icon size={18} className="strat-icon" />
-              <span className="strat-label">{s.label}</span>
-              <span className="strat-desc">{s.desc}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      {(strategy === 'bess' || strategy === 'hybrid') && (
-        <fieldset className="stg-fieldset">
-          <legend className="stg-legend">BESS Parameters</legend>
-          <div className="stg-grid-2">
-            <div className="stg-field">
-              <label htmlFor="min-soc" className="stg-label">Min State of Charge — {minSoC}%</label>
-              <input id="min-soc" type="range" className="stg-slider" value={minSoC}
-                onChange={e => setMinSoC(Number(e.target.value))} min="10" max="50" step="5" />
-              <p className="stg-hint">BESS will not discharge below this SoC floor.</p>
-            </div>
-          </div>
-        </fieldset>
-      )}
-
-      <fieldset className="stg-fieldset">
-        <legend className="stg-legend">Peak Window &amp; Tariff</legend>
-        <div className="stg-grid-3">
-          <div className="stg-field">
-            <label htmlFor="window-start" className="stg-label">Window Start</label>
-            <input id="window-start" type="time" className="stg-input" value={windowStart}
-              onChange={e => setWindowStart(e.target.value)} />
-          </div>
-          <div className="stg-field">
-            <label htmlFor="window-end" className="stg-label">Window End</label>
-            <input id="window-end" type="time" className="stg-input" value={windowEnd}
-              onChange={e => setWindowEnd(e.target.value)} />
-          </div>
-          <div className="stg-field">
-            <label htmlFor="tariff-period" className="stg-label">Tariff Structure</label>
-            <select id="tariff-period" className="stg-select" value={tariffPeriod}
-              onChange={e => setTariffPeriod(e.target.value)}>
-              <option value="flat">Flat Rate</option>
-              <option value="tod">Time of Day (ToD)</option>
-              <option value="tou">Time of Use (TOU)</option>
-              <option value="rtp">Real-Time Pricing</option>
-            </select>
-          </div>
-        </div>
-      </fieldset>
-
-      <div className="stg-actions">
-        <button type="button" className="stg-btn stg-btn--ghost" id="peak-reset-btn">
-          <RotateCcw size={15} /> Reset
-        </button>
-        <button type="submit" className={`stg-btn stg-btn--primary ${saved ? 'stg-btn--saved' : ''}`} id="peak-save-btn">
-          {saved ? <><Check size={15} /> Saved</> : <><Save size={15} /> Save Configuration</>}
-        </button>
-      </div>
-    </form>
-  );
-}
 
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 export function PortsConfigTab() {
-  const { esp32, sendCommand } = useEsp32();
-  
-  const toggleRelay = (relayId, currentState) => {
-    sendCommand('relay_control', { relay: relayId, state: !currentState });
-  };
-
-  const t = esp32.latestTelemetry || {};
-  
-  return (
-    <div className="stg-pane" id="ports-pane">
-      <div className="stg-section-head">
-        <div className="stg-section-icon"><SettingsIcon size={16} /></div>
-        <div>
-          <h2 className="stg-section-title">Port Control & Relays</h2>
-          <p className="stg-section-desc">Manage ESP32 output ports and monitor current status.</p>
-        </div>
-      </div>
-      
-      <h3 style={{ marginBottom: '1rem', marginTop: '1rem', fontSize: '1.1rem', color: 'var(--color-fg)' }}>Relay Controls</h3>
-      <div className="stg-kpi-grid" style={{ marginBottom: '2.5rem' }}>
-        <div className="stg-kpi-tile kpi--cyan" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <span className="kpi-label">Relay 1 (1-Ch)</span>
-            <span className="kpi-val" style={{ fontSize: '1.2rem' }}>{t.relay1 ? 'ON' : 'OFF'}</span>
-          </div>
-          <ToggleSwitch id="r1" checked={t.relay1} onChange={() => toggleRelay(1, t.relay1)} />
-        </div>
-        <div className="stg-kpi-tile kpi--cyan" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <span className="kpi-label">Relay 2 (1-Ch)</span>
-            <span className="kpi-val" style={{ fontSize: '1.2rem' }}>{t.relay2 ? 'ON' : 'OFF'}</span>
-          </div>
-          <ToggleSwitch id="r2" checked={t.relay2} onChange={() => toggleRelay(2, t.relay2)} />
-        </div>
-        <div className="stg-kpi-tile kpi--indigo" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <span className="kpi-label">Relay 3 (2-Ch A)</span>
-            <span className="kpi-val" style={{ fontSize: '1.2rem' }}>{t.relay3 ? 'ON' : 'OFF'}</span>
-          </div>
-          <ToggleSwitch id="r3" checked={t.relay3} onChange={() => toggleRelay(3, t.relay3)} />
-        </div>
-        <div className="stg-kpi-tile kpi--indigo" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <span className="kpi-label">Relay 4 (2-Ch B)</span>
-            <span className="kpi-val" style={{ fontSize: '1.2rem' }}>{t.relay4 ? 'ON' : 'OFF'}</span>
-          </div>
-          <ToggleSwitch id="r4" checked={t.relay4} onChange={() => toggleRelay(4, t.relay4)} />
-        </div>
-      </div>
-    </div>
-  );
+  return <PortConfigTab />;
 }
 
 export default function SettingsPage({ onBack, defaultTab = 'port' }) {
@@ -1283,13 +1625,19 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
   }, []);
 
   const panels = {
-    port:          PortsConfigTab,
-    status:        Esp32Tab,
+    device:          DeviceConfigTab,
+    port:            PortConfigTab,
+    controller:      RelayControllerTab,
+    relay:           RelayControllerTab,
+    peak:            LoadSheddingTab,
+    shedding:        LoadSheddingTab,
+    recommendations: LoadRecommendationsTab,
+    recom:           LoadRecommendationsTab,
+    status:          Esp32Tab,
     logs:          LogsTab,
     notifications: NotificationsTab,
-    peak:          PeakConfigTab,
   };
-  const ActivePanel = panels[activeTab] || PortsConfigTab;
+  const ActivePanel = panels[activeTab] || PortConfigTab;
 
   const filteredTabs = TABS.filter(tab =>
     tab.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1324,7 +1672,7 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
             <span className="ref-path-sep">/</span>
             <span className="ref-path-segment">Settings</span>
             <span className="ref-path-sep">/</span>
-            <span className="ref-path-segment ref-path-segment--active">{activeTabObj.label}</span>
+            <span className="ref-path-segment ref-path-segment--active">{activeTabObj.shortLabel || activeTabObj.label}</span>
           </div>
         </div>
 
@@ -1339,9 +1687,10 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
                 type="button"
                 className={`ref-nav-tab ${isActive ? 'ref-nav-tab--active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
+                title={tab.label}
               >
-                <Icon size={16} className="ref-tab-icon" />
-                <span className="ref-tab-label">{tab.label}</span>
+                <Icon size={15} className="ref-tab-icon" />
+                <span className="ref-tab-label">{tab.shortLabel || tab.label}</span>
                 {tab.hasDot && <span className="ref-tab-dot" />}
               </button>
             );
@@ -1350,6 +1699,10 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
 
         {/* Right Action Icons matching reference image */}
         <div className="ref-nav-right">
+          <div className="ref-esp-pill" title="ESP32 Hardware Online at 10.38.24.77">
+            <span className="ref-esp-dot" />
+            <span className="ref-esp-text">10.38.24.77</span>
+          </div>
           {/* Magenta / Pink Circular Action Button with Plus */}
           <button
             type="button"

@@ -1,0 +1,640 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Relay Web Controller — ESP32 Wi-Fi to Arduino UART Relay Controller
+   Clean, modern engineering UI adhering to Hallmark Cobalt theme
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rc-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* ─── Hero Header & Architecture ─────────────────────────────────────────────── */
+.rc-hero-card {
+  background: #ffffff;
+  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.08));
+  border-radius: var(--radius-md, 12px);
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.rc-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.rc-hero-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rc-hero-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(29, 100, 242, 0.1);
+  color: #1d64f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rc-hero-title {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.rc-hero-subtitle {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.rc-link-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.rc-pill--wifi {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.rc-pill--uart {
+  background: rgba(139, 92, 246, 0.1);
+  color: #7c3aed;
+  border-color: rgba(139, 92, 246, 0.25);
+}
+
+/* ─── Visual Architecture Flowchart ──────────────────────────────────────────── */
+.rc-arch-card {
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-top: 1rem;
+}
+
+.rc-arch-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #475569;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rc-arch-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rc-arch-node {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 140px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rc-arch-node-name {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rc-arch-node-sub {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-family: var(--font-mono, monospace);
+}
+
+.rc-arch-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  min-width: 90px;
+}
+
+.rc-arch-link-text {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #1d64f2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rc-arch-link-line {
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, #1d64f2, #8b5cf6);
+  position: relative;
+}
+
+.rc-arch-relays-branch {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rc-arch-relay-chip {
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #ffffff;
+}
+
+.rc-arch-relay-chip.active {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.rc-arch-relay-chip.inactive {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* ─── Relay Action Cards Grid ─────────────────────────────────────────────────── */
+.rc-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 1080px) {
+  .rc-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 580px) {
+  .rc-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rc-relay-card {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.09);
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rc-relay-card--active {
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.08);
+}
+
+.rc-relay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.rc-relay-number {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.rc-relay-pin {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.74rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.rc-relay-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.rc-relay-state-pill--on {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.rc-relay-state-pill--off {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.rc-relay-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rc-relay-device-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #0f172a;
+}
+
+.rc-relay-specs {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-family: var(--font-mono, monospace);
+}
+
+.rc-relay-protocol-code {
+  font-size: 0.74rem;
+  color: #1d64f2;
+  font-family: var(--font-mono, monospace);
+  background: rgba(29, 100, 242, 0.06);
+  padding: 3px 6px;
+  border-radius: 4px;
+  margin-top: 4px;
+  display: inline-block;
+}
+
+.rc-relay-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 0.5rem;
+}
+
+.rc-btn-on {
+  flex: 1;
+  background: #10b981;
+  color: #ffffff;
+  border: 1px solid #059669;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.rc-btn-on:hover {
+  background: #059669;
+}
+
+.rc-btn-on:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.rc-btn-off {
+  flex: 1;
+  background: #f8fafc;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.rc-btn-off:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.rc-btn-off:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ─── Master Controller Strip ───────────────────────────────────────────────── */
+.rc-master-strip {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.rc-master-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rc-master-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.rc-master-desc {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.rc-master-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.rc-btn-all-on {
+  background: #0284c7;
+  color: #ffffff;
+  border: 1px solid #0369a1;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease;
+}
+
+.rc-btn-all-on:hover {
+  background: #0369a1;
+}
+
+.rc-btn-emergency {
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #b91c1c;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease;
+}
+
+.rc-btn-emergency:hover {
+  background: #b91c1c;
+}
+
+/* ─── Protocol Reference Table ──────────────────────────────────────────────── */
+.rc-section {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.rc-section-header {
+  margin-bottom: 1.25rem;
+}
+
+.rc-section-title {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.rc-section-desc {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin: 3px 0 0 0;
+}
+
+.rc-protocol-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.rc-protocol-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+  background: #f8fafc;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.rc-protocol-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+}
+
+.rc-protocol-table tr:hover {
+  background: #f8fafc;
+}
+
+.rc-code-badge {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.rc-action-pill {
+  display: inline-block;
+  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.rc-action-pill--on {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.rc-action-pill--off {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* ─── Live UART Monitor & Terminal ──────────────────────────────────────────── */
+.rc-terminal-box {
+  background: #0d1527;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  font-family: var(--font-mono, monospace);
+}
+
+.rc-terminal-header {
+  background: #080d18;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rc-terminal-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.rc-term-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.rc-term-dot--red { background: #ef4444; }
+.rc-term-dot--amber { background: #f59e0b; }
+.rc-term-dot--green { background: #10b981; }
+
+.rc-terminal-title {
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+.rc-terminal-body {
+  padding: 12px 14px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.rc-term-line {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.rc-term-ts {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.rc-term-src {
+  color: #38bdf8;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.rc-term-cmd {
+  color: #4ade80;
+  font-weight: 700;
+}
+
+.rc-term-echo {
+  color: #cbd5e1;
+}
+
+/* ─── Firmware Viewer ────────────────────────────────────────────────────────── */
+.rc-firmware-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 1rem;
+}
+
+.rc-fw-tab-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #f8fafc;
+  color: #475569;
+  transition: all 0.15s ease;
+}
+
+.rc-fw-tab-btn--active {
+  background: #1d64f2;
+  color: #ffffff;
+  border-color: #1d64f2;
+}
+
+.rc-code-pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 14px;
+  border-radius: 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}

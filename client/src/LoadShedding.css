@@ -1,0 +1,709 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Load Shedding & Scheduling — Clean, Modern Workbench UI
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.ls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 100%;
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Phase 1: Peak Status Top Summary ────────────────────────────────────────── */
+.ls-hero-card {
+  background: #ffffff;
+  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.08));
+  border-radius: var(--radius-md, 12px);
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.ls-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.ls-hero-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ls-hero-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(29, 100, 242, 0.1);
+  color: var(--color-accent, #1d64f2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ls-hero-title {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.ls-hero-subtitle {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.ls-auto-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(5, 150, 105, 0.1);
+  color: #059669;
+  border: 1px solid rgba(5, 150, 105, 0.25);
+}
+
+.ls-auto-pill--off {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.ls-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 860px) {
+  .ls-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.ls-metric-card {
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 8px;
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.ls-metric-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(29, 100, 242, 0.25);
+}
+
+.ls-metric-card--danger {
+  background: rgba(239, 68, 68, 0.04);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.ls-metric-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.ls-metric-val {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.ls-metric-val--danger {
+  color: #dc2626;
+}
+
+.ls-metric-sub {
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+/* Peak Risk Alert Bar */
+.ls-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #b91c1c;
+  animation: pulseAlert 2.5s infinite;
+}
+
+.ls-alert-banner--ok {
+  background: rgba(5, 150, 105, 0.08);
+  border-color: rgba(5, 150, 105, 0.25);
+  color: #047857;
+  animation: none;
+}
+
+@keyframes pulseAlert {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.35); }
+  50% { border-color: rgba(239, 68, 68, 0.8); }
+}
+
+.ls-alert-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ls-quick-counts {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.ls-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  color: #334155;
+}
+
+/* ─── Generic Section Box ─────────────────────────────────────────────────────── */
+.ls-section {
+  background: #ffffff;
+  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.08));
+  border-radius: var(--radius-md, 12px);
+  padding: 1.35rem 1.5rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.ls-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.15rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.ls-section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ls-section-title {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.ls-section-desc {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* ─── Phase 2: Automatic Load Shedding ────────────────────────────────────────── */
+.ls-auto-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .ls-auto-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ls-toggle-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.95rem 1.15rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.ls-toggle-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.ls-toggle-sub {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.ls-thresholds-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 768px) {
+  .ls-thresholds-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ls-param-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ls-param-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.ls-input-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.ls-input-wrap input {
+  flex: 1;
+  border: none;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+  outline: none;
+}
+
+.ls-input-addon {
+  padding: 0.55rem 0.75rem;
+  background: #f1f5f9;
+  border-left: 1px solid #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.ls-example-calc {
+  background: rgba(29, 100, 242, 0.05);
+  border: 1px solid rgba(29, 100, 242, 0.18);
+  border-radius: 8px;
+  padding: 0.85rem 1.15rem;
+  font-size: 0.8rem;
+  color: #334155;
+  line-height: 1.45;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+/* ─── Phase 3: Device Shedding Table ──────────────────────────────────────────── */
+.ls-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  border-radius: 8px;
+}
+
+.ls-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.84rem;
+}
+
+.ls-table th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.ls-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+  color: #1e293b;
+  vertical-align: middle;
+}
+
+.ls-table tr:hover {
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.ls-table tr.ls-row--shed {
+  background: rgba(239, 68, 68, 0.03);
+}
+
+.ls-port-chip {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  color: #334155;
+}
+
+.ls-badge-prio {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  text-transform: capitalize;
+}
+
+.ls-badge-prio--critical {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.ls-badge-prio--medium {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.ls-badge-prio--low {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  border: 1px solid rgba(100, 116, 139, 0.25);
+}
+
+.ls-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.ls-state-pill--on {
+  background: rgba(5, 150, 105, 0.1);
+  color: #059669;
+}
+
+.ls-state-pill--shed {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.ls-state-pill--shift {
+  background: rgba(29, 100, 242, 0.1);
+  color: #1d64f2;
+}
+
+.ls-action-buttons {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.ls-btn-action {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 5px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ls-btn-action:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.ls-btn-action--shed {
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.ls-btn-action--shed:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.ls-btn-action--restore {
+  color: #059669;
+  border-color: rgba(5, 150, 105, 0.3);
+}
+
+.ls-btn-action--restore:hover:not(:disabled) {
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.ls-btn-action--shift {
+  color: #1d64f2;
+  border-color: rgba(29, 100, 242, 0.3);
+}
+
+.ls-btn-action--shift:hover:not(:disabled) {
+  background: rgba(29, 100, 242, 0.08);
+}
+
+.ls-protected-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #059669;
+  background: rgba(5, 150, 105, 0.08);
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(5, 150, 105, 0.2);
+}
+
+/* ─── Phase 4: Load Shedding Sequence ─────────────────────────────────────────── */
+.ls-sequence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ls-seq-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.15rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  transition: all 0.15s ease;
+}
+
+.ls-seq-item:hover {
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.ls-seq-item--protected {
+  background: rgba(5, 150, 105, 0.04);
+  border-color: rgba(5, 150, 105, 0.25);
+}
+
+.ls-seq-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.ls-seq-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #334155;
+  font-weight: 700;
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ls-seq-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.ls-seq-dot--red { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+.ls-seq-dot--yellow { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+.ls-seq-dot--green { background: #10b981; box-shadow: 0 0 6px #10b981; }
+
+.ls-seq-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #0f172a;
+}
+
+.ls-seq-power {
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #1d64f2;
+}
+
+.ls-seq-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ls-seq-btn {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ls-seq-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* ─── Phase 5: Scheduling / Load Shifting ─────────────────────────────────────── */
+.ls-schedule-form {
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.ls-form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 800px) {
+  .ls-form-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ls-days-selector {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.ls-day-chip {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.ls-day-chip--active {
+  background: #1d64f2;
+  color: #ffffff;
+  border-color: #1d64f2;
+}
+
+/* ─── Phase 6: Shedding & Scheduling History ──────────────────────────────────── */
+.ls-history-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.ls-hist-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.85rem 1.15rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.ls-hist-card--shed {
+  border-left: 4px solid #ef4444;
+}
+
+.ls-hist-card--restore {
+  border-left: 4px solid #10b981;
+}
+
+.ls-hist-time {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.ls-hist-action-pill {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.ls-hist-action-pill--shed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+
+.ls-hist-action-pill--restore {
+  background: rgba(5, 150, 105, 0.12);
+  color: #059669;
+}
+
+.ls-hist-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.82rem;
+  font-weight: 700;
+  background: #ffffff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}

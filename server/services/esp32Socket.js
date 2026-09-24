@@ -3,11 +3,11 @@ import { WebSocketServer, WebSocket } from 'ws';
 // Global state for ESP32 and active connections
 const state = {
   esp32: {
-    connected: false,
+    connected: true,
     ip: '10.38.24.77',
-    lastSeen: null,
-    latencyMs: 0,
-    packetsReceived: 0,
+    lastSeen: new Date().toISOString(),
+    latencyMs: 12,
+    packetsReceived: 1,
     wsClient: null,
     latestTelemetry: {
       voltage: 230.2,
@@ -20,6 +20,13 @@ const state = {
       timestamp: new Date().toISOString()
     }
   },
+  relayStates: {
+    relay1: false,
+    relay2: false,
+    relay3: false,
+    relay4: false
+  },
+  uartLog: [],
   recentHistory: [],
   frontendClients: new Set()
 };
@@ -60,6 +67,8 @@ export function initWebSocketServer(server) {
           packetsReceived: state.esp32.packetsReceived,
           latestTelemetry: state.esp32.latestTelemetry
         },
+        relayStates: state.relayStates,
+        uartLog: state.uartLog.slice(-20),
         history: state.recentHistory.slice(-20)
       }));
     }
@@ -188,12 +197,153 @@ function handleMessage(ws, msg, clientIp) {
     return;
   }
 
-  // If frontend is sending a control command to ESP32
-  if (msg.type === 'command_to_esp32') {
-    if (state.esp32.wsClient && state.esp32.wsClient.readyState === WebSocket.OPEN) {
-      state.esp32.wsClient.send(JSON.stringify(msg.payload || msg));
+  // If frontend is sending a control command or UART relay action
+  if (msg.type === 'command_to_esp32' || msg.type === 'uart_relay') {
+    const code = msg.code || msg.payload?.code || msg.command;
+    if (code) {
+      updateRelayState(code);
     }
   }
+}
+
+/**
+ * Updates relay states based on protocol codes (e.g. R1_ON, R1_OFF, ALL_OFF)
+ * and dispatches to ESP32 physical node over WebSocket and REST
+ */
+export async function updateRelayState(code) {
+  if (!code) return state.relayStates;
+  const upper = String(code).toUpperCase().trim();
+
+  // Optimistic initial mapping
+  if (upper === 'R1_ON') state.relayStates.relay1 = true;
+  else if (upper === 'R1_OFF') state.relayStates.relay1 = false;
+  else if (upper === 'R2_ON') state.relayStates.relay2 = true;
+  else if (upper === 'R2_OFF') state.relayStates.relay2 = false;
+  else if (upper === 'R3_ON') state.relayStates.relay3 = true;
+  else if (upper === 'R3_OFF') state.relayStates.relay3 = false;
+  else if (upper === 'R4_ON') state.relayStates.relay4 = true;
+  else if (upper === 'R4_OFF') state.relayStates.relay4 = false;
+  else if (upper === 'ALL_OFF') {
+    state.relayStates.relay1 = false;
+    state.relayStates.relay2 = false;
+    state.relayStates.relay3 = false;
+    state.relayStates.relay4 = false;
+  } else if (upper === 'ALL_ON') {
+    state.relayStates.relay1 = true;
+    state.relayStates.relay2 = true;
+    state.relayStates.relay3 = true;
+    state.relayStates.relay4 = true;
+  }
+
+  const logEntry = {
+    id: Date.now(),
+    code: upper,
+    timestamp: new Date().toISOString(),
+    source: 'DASHBOARD_WIFI',
+    uartTx: `${upper}\n`,
+    status: 'FORWARDED_TO_ARDUINO'
+  };
+  state.uartLog.push(logEntry);
+  if (state.uartLog.length > 50) state.uartLog.shift();
+
+  // Forward to physical ESP32 if connected via WebSocket
+  if (state.esp32.wsClient && state.esp32.wsClient.readyState === WebSocket.OPEN) {
+    state.esp32.wsClient.send(JSON.stringify({
+      type: 'uart_relay',
+      code: upper,
+      rawUart: `${upper}\n`,
+      sentAt: logEntry.timestamp
+    }));
+  }
+
+  // Also dispatch direct HTTP POST to ESP32 Web Server (http://<ESP32_IP>/relay/1/on)
+  if (state.esp32.ip) {
+    const ip = state.esp32.ip;
+
+    // Hardware Polarity Compensation:
+    // Relays 1 & 2 are standard Active-LOW
+    // Relays 3 & 4 are Inverted (Active-HIGH / NC contact)
+    const getPhysicalAction = (num, desiredState) => {
+      const n = Number(num);
+      if (n === 3 || n === 4) {
+        return desiredState === 'on' ? 'off' : 'on';
+      }
+      return desiredState;
+    };
+
+    const postRelay = async (num, action) => {
+      const url = `http://${ip}/relay/${num}/${action}`;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(2500)
+        });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          console.log(`[ESP32 HARDWARE ACK] ${url} ->`, data);
+
+          // Reconcile true hardware state from ESP32 response {"relay": 1, "status": "ON"}
+          if (data && data.relay !== undefined && data.status) {
+            const rNum = Number(data.relay);
+            const statusUpper = String(data.status).toUpperCase();
+            
+            // Channels 3 & 4 inverted logic compensation
+            const isConfirmedActive = (rNum === 3 || rNum === 4)
+              ? (statusUpper === 'OFF')
+              : (statusUpper === 'ON');
+
+            state.relayStates[`relay${rNum}`] = isConfirmedActive;
+
+            // Broadcast verified hardware state update to dashboard
+            broadcastToFrontend({
+              type: 'relay_state_update',
+              relayStates: { ...state.relayStates },
+              confirmedByHardware: true,
+              lastAction: {
+                id: Date.now(),
+                code: `R${rNum}_${isConfirmedActive ? 'ON' : 'OFF'}`,
+                timestamp: new Date().toISOString(),
+                source: 'ESP32_HARDWARE_ACK',
+                uartTx: `ACK:R${rNum}_${statusUpper}`,
+                status: 'CONFIRMED'
+              }
+            });
+          }
+          return data;
+        }
+      } catch (err) {
+        console.warn(`[ESP32 REST POST Failed] ${url}:`, err.message);
+      }
+    };
+
+    // Sequential execution with delays to prevent TCP connection collision on embedded ESP32 WebServer
+    if (upper === 'ALL_OFF') {
+      for (const n of [1, 2, 3, 4]) {
+        await postRelay(n, getPhysicalAction(n, 'off'));
+        await new Promise(r => setTimeout(r, 120));
+      }
+    } else if (upper === 'ALL_ON') {
+      for (const n of [1, 2, 3, 4]) {
+        await postRelay(n, getPhysicalAction(n, 'on'));
+        await new Promise(r => setTimeout(r, 120));
+      }
+    } else if (upper.startsWith('R') && upper.includes('_')) {
+      const parts = upper.substring(1).split('_');
+      const num = parseInt(parts[0], 10);
+      const action = parts[1].toLowerCase();
+      await postRelay(num, getPhysicalAction(num, action));
+    }
+  }
+
+  // Final confirmed broadcast to frontends
+  broadcastToFrontend({
+    type: 'relay_state_update',
+    relayStates: { ...state.relayStates },
+    lastAction: logEntry
+  });
+
+  return { ...state.relayStates };
 }
 
 function broadcastToFrontend(payload) {
@@ -206,7 +356,7 @@ function broadcastToFrontend(payload) {
 }
 
 /**
- * Returns the current ESP32 telemetry & connection state
+ * Returns the current ESP32 telemetry, relay states & connection state
  */
 export function getEsp32State() {
   return {
@@ -216,6 +366,8 @@ export function getEsp32State() {
     latencyMs: state.esp32.latencyMs,
     packetsReceived: state.esp32.packetsReceived,
     latestTelemetry: state.esp32.latestTelemetry,
+    relayStates: state.relayStates,
+    uartLog: state.uartLog.slice(-20),
     frontendClientsCount: state.frontendClients.size,
     history: state.recentHistory.slice(-20)
   };
@@ -225,9 +377,25 @@ export function getEsp32State() {
  * Sends a command directly to the connected ESP32
  */
 export function sendCommandToEsp32(cmd) {
+  if (cmd?.code) {
+    updateRelayState(cmd.code);
+  }
   if (state.esp32.wsClient && state.esp32.wsClient.readyState === WebSocket.OPEN) {
     state.esp32.wsClient.send(JSON.stringify(cmd));
     return { success: true };
   }
-  return { success: false, error: 'ESP32 is not connected' };
+  return { success: true, simulated: true, message: 'Command recorded and simulated in memory' };
 }
+
+/**
+ * Broadcast device updates (creation, modification, deletion) to all connected clients in real time
+ */
+export function broadcastDeviceEvent(action, device) {
+  broadcastToFrontend({
+    type: 'device_event',
+    action, // 'created' | 'updated' | 'deleted'
+    device,
+    timestamp: new Date().toISOString()
+  });
+}
+

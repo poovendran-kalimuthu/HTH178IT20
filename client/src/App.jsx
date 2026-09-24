@@ -9,5 +9,5 @@ export default function App() {
     document.body.classList.add('light-theme');
   }, []);
 
-  return <SettingsPage defaultTab="esp32" />;
+  return <SettingsPage defaultTab="device" />;
 }
