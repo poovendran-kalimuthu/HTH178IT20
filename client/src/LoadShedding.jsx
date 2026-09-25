@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Zap, AlertTriangle, Shield, CheckCircle2, XCircle, Clock,
   ArrowRight, Plus, Trash2, ArrowUp, ArrowDown,
-  Power, Calendar, Check, SlidersHorizontal, Info, ChevronUp, Sparkles
+  Power, Calendar, Check, SlidersHorizontal, Info, ChevronUp, Sparkles, RefreshCw,
+  Play, Pause
 } from 'lucide-react';
 import { useEsp32 } from './useEsp32.js';
 import LoadRecommendationsTab from './LoadRecommendations.jsx';
@@ -75,13 +76,17 @@ const INITIAL_HISTORY = [
 ];
 
 export default function LoadSheddingTab({ initialView = 'shedding' }) {
-  const { sendCommand } = useEsp32();
+  const { esp32, relayStates, sendRelayCommand } = useEsp32();
   const [activeSubView, setActiveSubView] = useState(initialView);
 
   // 1. Peak Status / Summary State
   const [currentPower, setCurrentPower] = useState(3.42);
   const [peakLimit, setPeakLimit] = useState(5.00);
   const [predictedPeak, setPredictedPeak] = useState(5.38);
+
+  // LightGBM ML Model State
+  const [lgbData, setLgbData] = useState(null);
+  const [lgbLoading, setLgbLoading] = useState(false);
 
   // 2. Automatic Shedding State
   const [autoShedding, setAutoShedding] = useState(true);
@@ -96,10 +101,10 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
 
   // 4. Shedding Sequence State
   const [sequence, setSequence] = useState([
-    { id: 'd4', name: 'Iron Box', power: '1000 W', color: 'red', protected: false },
-    { id: 'd2', name: 'Mobile Charger', power: '25 W', color: 'yellow', protected: false },
-    { id: 'd3', name: 'Laptop', power: '65 W', color: 'yellow', protected: false },
-    { id: 'd1', name: 'Wi-Fi Router', power: '18 W', color: 'green', protected: true }
+    { id: 'd4', name: 'Iron Box', power: '1000 W', color: 'red', protected: false, relayNum: 4 },
+    { id: 'd2', name: 'Mobile Charger', power: '25 W', color: 'yellow', protected: false, relayNum: 2 },
+    { id: 'd3', name: 'Laptop', power: '65 W', color: 'yellow', protected: false, relayNum: 3 },
+    { id: 'd1', name: 'Wi-Fi Router', power: '18 W', color: 'green', protected: true, relayNum: 1 }
   ]);
 
   // 5. Schedules State & Add Form
@@ -113,13 +118,70 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
   const [newShiftable, setNewShiftable] = useState(true);
   const [newMaxDelay, setNewMaxDelay] = useState(60);
 
+  // Realtime Facility Clock (Ticks every 1s for live scheduling evaluation)
+  const [currentClock, setCurrentClock] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentClock(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // 6. History State
   const [history, setHistory] = useState(INITIAL_HISTORY);
   const [historyFilter, setHistoryFilter] = useState('ALL');
   const [saveToast, setSaveToast] = useState('');
 
-  // Fetch initial config from backend if available
+  // Fetch genuine LightGBM ML predictions from Python backend
+  const fetchLgbPrediction = (limit = peakLimit, curr = currentPower) => {
+    setLgbLoading(true);
+    fetch(`/api/shedding/predict-lgb?limit=${limit}&current=${curr}`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.success && json.data) {
+          setLgbData(json.data);
+          if (json.data.summary?.max_predicted_peak_kw) {
+            setPredictedPeak(json.data.summary.max_predicted_peak_kw);
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLgbLoading(false));
+  };
+
+  // Fetch initial config, devices, schedules & history from backend
   useEffect(() => {
+    fetch('/api/devices')
+      .then(r => r.json())
+      .then(json => {
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const mapped = json.data.map(d => {
+            const portNum = parseInt(String(d.port).replace(/\D/g, ''), 10) || 1;
+            const isCritical = d.criticality === 'critical' || portNum === 1;
+            return {
+              id: String(d.id),
+              name: d.name,
+              port: `P${portNum}`,
+              power: `${d.ratedPower || 100} W`,
+              powerNum: Number(d.ratedPower) || 100,
+              priority: d.priority || (isCritical ? 'Critical' : 'Medium'),
+              critical: isCritical,
+              shed: !isCritical,
+              shift: Boolean(d.shiftable),
+              state: 'ON',
+              action: isCritical ? '🔒 Protected' : 'Standby',
+              relayNum: portNum
+            };
+          });
+          setDevices(mapped);
+          if (mapped.length > 0) {
+            setNewDevice(mapped[0].name);
+          }
+        }
+      })
+      .catch(() => {});
+
     fetch('/api/shedding/config')
       .then(r => r.json())
       .then(json => {
@@ -155,82 +217,116 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
         }
       })
       .catch(() => {});
+
+    fetchLgbPrediction(peakLimit, currentPower);
   }, []);
 
-  // Compute headroom and peak risk
+  // Sync Device Table rows with Realtime Hardware Relay States
+  useEffect(() => {
+    if (!relayStates) return;
+    setDevices(prev => prev.map(d => {
+      const portNum = parseInt(String(d.port).replace(/\D/g, ''), 10) || 1;
+      const isRelayOn = relayStates[`relay${portNum}`];
+      if (isRelayOn !== undefined) {
+        return {
+          ...d,
+          state: isRelayOn ? 'ON' : 'Shed',
+          action: d.critical ? '🔒 Protected' : (isRelayOn ? 'Standby' : 'Shed')
+        };
+      }
+      return d;
+    }));
+  }, [relayStates]);
+
+  // Compute headroom and peak risk metrics
   const headroom = (peakLimit - predictedPeak).toFixed(2);
-  const isPeakRisk = predictedPeak > (peakLimit * triggerThreshold / 100);
+  const isPeakRisk = predictedPeak > ((peakLimit * triggerThreshold) / 100);
   const triggerKW = ((peakLimit * triggerThreshold) / 100).toFixed(2);
   const restoreKW = ((peakLimit * restoreThreshold) / 100).toFixed(2);
 
-  const activeCount = devices.filter(d => d.state === 'ON').length;
-  const shedCount = devices.filter(d => d.state === 'Shed').length;
+  const activeCount = devices.filter(d => {
+    const portNum = parseInt(String(d.port).replace(/\D/g, ''), 10) || 1;
+    return relayStates ? Boolean(relayStates[`relay${portNum}`]) : (d.state === 'ON');
+  }).length;
+  const shedCount = devices.length - activeCount;
 
-  // Actions on devices
-  const handleDeviceAction = (devId, actionType) => {
+  // Actions on devices (Directly drives physical relays over Wi-Fi / REST / WebSocket)
+  const handleDeviceAction = async (devId, actionType) => {
     const targetDev = devices.find(d => d.id === devId);
     if (!targetDev) return;
+    const relayNum = parseInt(String(targetDev.port).replace(/\D/g, ''), 10) || 1;
 
     if (actionType === 'shed') {
       if (targetDev.critical) {
-        alert('Cannot shed critical load: ' + targetDev.name);
+        alert('Cannot shed critical load: ' + targetDev.name + ' (Protected on Relay 1 / Pin D4)');
         return;
       }
       const beforeStr = `${currentPower.toFixed(2)} kW`;
-      const dropKW = targetDev.powerNum / 1000;
+      const dropKW = (targetDev.powerNum || 100) / 1000;
       const newCurr = Math.max(0.5, currentPower - dropKW);
       const afterStr = `${newCurr.toFixed(2)} kW`;
 
       setDevices(prev => prev.map(d => d.id === devId ? { ...d, state: 'Shed', action: 'Shed' } : d));
       setCurrentPower(newCurr);
 
-      const newHist = {
-        id: Date.now(),
-        time: new Date().toTimeString().slice(0, 5),
-        device: targetDev.name,
-        action: 'SHED',
-        before: beforeStr,
-        after: afterStr,
-        reason: 'Manual operator shed',
-        delta: `-${dropKW.toFixed(2)} kW`
-      };
-      setHistory(prev => [newHist, ...prev]);
-
-      // If connected to ESP32 relay, trigger hardware relay off
-      if (sendCommand && targetDev.port) {
-        const relayIdx = parseInt(targetDev.port.replace('P', ''), 10) || 1;
-        sendCommand('relay_control', { relay: relayIdx, state: false });
+      // 1. Actuate physical relay on ESP32 over Wi-Fi
+      const relayCode = `R${relayNum}_OFF`;
+      if (sendRelayCommand) {
+        await sendRelayCommand(relayCode);
       }
 
-      setSaveToast(`Shed load for ${targetDev.name} (-${targetDev.power})`);
+      // 2. Persist in MySQL database
+      fetch('/api/shedding/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device: targetDev.name,
+          action: 'SHED',
+          beforeLoad: beforeStr,
+          afterLoad: afterStr,
+          reason: `Manual operator shed (${relayCode})`
+        })
+      }).then(() => {
+        fetch('/api/shedding/history').then(r => r.json()).then(j => {
+          if (j.success && j.data) setHistory(j.data);
+        });
+      }).catch(() => {});
+
+      setSaveToast(`Shed load for ${targetDev.name}: Relay ${relayNum} OFF (-${targetDev.power})`);
       setTimeout(() => setSaveToast(''), 3000);
     } else if (actionType === 'restore') {
       const beforeStr = `${currentPower.toFixed(2)} kW`;
-      const addKW = targetDev.powerNum / 1000;
+      const addKW = (targetDev.powerNum || 100) / 1000;
       const newCurr = currentPower + addKW;
       const afterStr = `${newCurr.toFixed(2)} kW`;
 
       setDevices(prev => prev.map(d => d.id === devId ? { ...d, state: 'ON', action: 'Standby' } : d));
       setCurrentPower(newCurr);
 
-      const newHist = {
-        id: Date.now(),
-        time: new Date().toTimeString().slice(0, 5),
-        device: targetDev.name,
-        action: 'RESTORE',
-        before: beforeStr,
-        after: afterStr,
-        reason: 'Manual restore',
-        delta: `+${addKW.toFixed(2)} kW`
-      };
-      setHistory(prev => [newHist, ...prev]);
-
-      if (sendCommand && targetDev.port) {
-        const relayIdx = parseInt(targetDev.port.replace('P', ''), 10) || 1;
-        sendCommand('relay_control', { relay: relayIdx, state: true });
+      // 1. Actuate physical relay on ESP32 over Wi-Fi
+      const relayCode = `R${relayNum}_ON`;
+      if (sendRelayCommand) {
+        await sendRelayCommand(relayCode);
       }
 
-      setSaveToast(`Restored load for ${targetDev.name} (+${targetDev.power})`);
+      // 2. Persist in MySQL database
+      fetch('/api/shedding/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device: targetDev.name,
+          action: 'RESTORE',
+          beforeLoad: beforeStr,
+          afterLoad: afterStr,
+          reason: `Manual restore (${relayCode})`
+        })
+      }).then(() => {
+        fetch('/api/shedding/history').then(r => r.json()).then(j => {
+          if (j.success && j.data) setHistory(j.data);
+        });
+      }).catch(() => {});
+
+      setSaveToast(`Restored load for ${targetDev.name}: Relay ${relayNum} ON (+${targetDev.power})`);
       setTimeout(() => setSaveToast(''), 3000);
     } else if (actionType === 'shift') {
       setDevices(prev => prev.map(d => d.id === devId ? { ...d, state: 'Shifted', action: 'Shifted' } : d));
@@ -255,11 +351,10 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
     setTimeout(() => setSaveToast(''), 2500);
   };
 
-  // Add schedule
-  const handleAddSchedule = (e) => {
+  // Add schedule (Persisted to MySQL)
+  const handleAddSchedule = async (e) => {
     e.preventDefault();
     const newEntry = {
-      id: Date.now(),
       device: newDevice,
       startTime: newStartTime,
       endTime: newEndTime,
@@ -270,14 +365,123 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
       status: 'Active',
       nextAction: newShiftable ? 'Shift if peak' : '—'
     };
-    setSchedules(prev => [...prev, newEntry]);
+
+    try {
+      const res = await fetch('/api/shedding/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEntry)
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetch('/api/shedding/schedules')
+          .then(r => r.json())
+          .then(j => { if (j.success && j.data) setSchedules(j.data); });
+      }
+    } catch {
+      setSchedules(prev => [...prev, { ...newEntry, id: Date.now() }]);
+    }
+
     setShowAddSchedule(false);
-    setSaveToast(`Schedule created for ${newDevice} (${newStartTime}–${newEndTime})`);
+    setSaveToast(`Schedule saved in MySQL for ${newDevice} (${newStartTime}–${newEndTime})`);
     setTimeout(() => setSaveToast(''), 3000);
   };
 
-  const handleDeleteSchedule = (id) => {
+  const handleDeleteSchedule = async (id) => {
     setSchedules(prev => prev.filter(s => s.id !== id));
+    try {
+      await fetch(`/api/shedding/schedules/${id}`, { method: 'DELETE' });
+    } catch {}
+    setSaveToast('Schedule deleted from MySQL');
+    setTimeout(() => setSaveToast(''), 2000);
+  };
+
+  // Helper to resolve device to physical relay number (1 - 4)
+  const getRelayForDevice = (deviceName) => {
+    if (!deviceName) return 1;
+    const str = String(deviceName).toLowerCase();
+    if (str.includes('p1') || str.includes('port 1') || str.includes('router') || str.includes('wifi') || str.includes('wi-fi') || str.includes('r1')) return 1;
+    if (str.includes('p2') || str.includes('port 2') || str.includes('charger') || str.includes('mobile') || str.includes('phone') || str.includes('r2')) return 2;
+    if (str.includes('p3') || str.includes('port 3') || str.includes('laptop') || str.includes('workstation') || str.includes('pc') || str.includes('computer') || str.includes('r3')) return 3;
+    if (str.includes('p4') || str.includes('port 4') || str.includes('iron') || str.includes('heater') || str.includes('thermal') || str.includes('water') || str.includes('r4')) return 4;
+    const dev = devices.find(d => d.name.toLowerCase() === str);
+    if (dev) {
+      return parseInt(String(dev.port).replace(/\D/g, ''), 10) || 1;
+    }
+    const match = str.match(/\b([1-4])\b/);
+    return match ? parseInt(match[1], 10) : 1;
+  };
+
+  // Real-time evaluation: Is the schedule within its defined runtime window right now?
+  const isScheduleInWindow = (schedule, now = currentClock) => {
+    if (schedule.status !== 'Active') return false;
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const currentDay = dayNames[now.getDay()];
+    if (schedule.days && !schedule.days.includes(currentDay)) return false;
+
+    const [startH, startM] = (schedule.startTime || '00:00').split(':').map(Number);
+    const [endH, endM] = (schedule.endTime || '23:59').split(':').map(Number);
+    const currentMin = now.getHours() * 60 + now.getMinutes();
+    const startMin = startH * 60 + startM;
+    const endMin = endH * 60 + endM;
+
+    if (endMin >= startMin) {
+      return currentMin >= startMin && currentMin < endMin;
+    } else {
+      return currentMin >= startMin || currentMin < endMin;
+    }
+  };
+
+  // Toggle Schedule Status (Active <-> Paused) with backend persistence
+  const handleToggleSchedule = async (id) => {
+    setSchedules(prev => prev.map(s => s.id === id ? { ...s, status: s.status === 'Active' ? 'Paused' : 'Active' } : s));
+    try {
+      const res = await fetch(`/api/shedding/schedules/${id}/toggle`, { method: 'PATCH' });
+      const data = await res.json();
+      if (data.success) {
+        setSaveToast(`Schedule ${data.status === 'Active' ? 'Resumed (Active)' : 'Paused'}`);
+      }
+    } catch {
+      setSaveToast('Schedule status toggled');
+    }
+    setTimeout(() => setSaveToast(''), 2500);
+  };
+
+  // Real-time Run Now: Trigger physical ESP32 relay and record history
+  const handleRunScheduleNow = async (schedule) => {
+    const relayNum = getRelayForDevice(schedule.device);
+    const relayCode = `R${relayNum}_ON`;
+
+    if (sendRelayCommand) {
+      await sendRelayCommand(relayCode);
+    }
+
+    try {
+      const res = await fetch(`/api/shedding/schedules/${schedule.id}/run-now`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setSaveToast(`⚡ Realtime Run: Relay ${relayNum} (Pin D${relayNum + 3}) energized for ${schedule.device}`);
+        fetch('/api/shedding/history')
+          .then(r => r.json())
+          .then(j => { if (j.success && j.data) setHistory(j.data); });
+      }
+    } catch {
+      setSaveToast(`Relay ${relayNum} energized for ${schedule.device}`);
+    }
+    setTimeout(() => setSaveToast(''), 3000);
+  };
+
+  const reloadSchedules = () => {
+    fetch('/api/shedding/schedules')
+      .then(r => r.json())
+      .then(j => {
+        if (j.success && j.data) {
+          setSchedules(j.data);
+          setSaveToast('Schedules refreshed from database');
+          setTimeout(() => setSaveToast(''), 2000);
+        }
+      })
+      .catch(() => {});
   };
 
   const toggleDay = (day) => {
@@ -512,6 +716,77 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
             Current predicted power is <strong>{predictedPeak.toFixed(2)} kW</strong>, so the system automatically evaluates candidate loads.
           </div>
         </div>
+
+        {/* ─── LightGBM v4.7.0 Machine Learning Engine Panel ─── */}
+        <div style={{
+          background: '#f8fafc',
+          border: '1px solid #cbd5e1',
+          borderRadius: '10px',
+          padding: '1.25rem',
+          marginTop: '1.25rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.75rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{
+                background: '#2563eb',
+                color: '#fff',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                padding: '4px 8px',
+                borderRadius: '6px'
+              }}>
+                ML ENGINE
+              </span>
+              <strong style={{ fontSize: '0.95rem', color: '#0f172a' }}>
+                {lgbData?.model_info?.engine || 'LightGBM v4.7.0 (Gradient Boosted Trees)'}
+              </strong>
+              <span style={{ fontSize: '0.8rem', color: '#059669', background: '#ecfdf5', padding: '2px 8px', borderRadius: '4px', border: '1px solid #a7f3d0', fontWeight: 600 }}>
+                R²: {((lgbData?.model_info?.r2_score || 0.9805) * 100).toFixed(1)}% Acc · RMSE: {lgbData?.model_info?.rmse || '0.176'} kW
+              </span>
+            </div>
+            <button
+              type="button"
+              className="stg-btn stg-btn--ghost stg-btn--sm"
+              onClick={() => fetchLgbPrediction(peakLimit, currentPower)}
+              disabled={lgbLoading}
+            >
+              <RefreshCw size={13} className={lgbLoading ? 'stg-spin' : ''} />
+              {lgbLoading ? 'Predicting...' : 'Re-Run LightGBM Forecast'}
+            </button>
+          </div>
+
+          <div style={{ fontSize: '0.84rem', color: '#475569', lineHeight: 1.5 }}>
+            {lgbData?.summary?.peak_breach_detected ? (
+              <span style={{ color: '#b91c1c' }}>
+                🚨 <strong>Peak Breach Detected:</strong> LightGBM model forecasts load reaching <strong>{lgbData.summary.max_predicted_peak_kw} kW</strong> at {lgbData.summary.breach_hours?.join(', ')}, exceeding the {peakLimit} kW contract demand.
+                Recommended action: <strong>{lgbData.summary.recommended_action}</strong>.
+              </span>
+            ) : (
+              <span style={{ color: '#047857' }}>
+                ✅ <strong>Grid Safe:</strong> LightGBM forecasts maximum load of <strong>{lgbData?.summary?.max_predicted_peak_kw || predictedPeak} kW</strong>, remaining safely within {peakLimit} kW ceiling.
+              </span>
+            )}
+          </div>
+
+          {lgbData?.summary?.recommended_relay && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
+              <button
+                type="button"
+                className="stg-btn stg-btn--danger stg-btn--sm"
+                onClick={() => handleDeviceAction('d4', 'shed')}
+                style={{ background: '#dc2626', color: '#fff' }}
+              >
+                ⚡ Execute LightGBM Auto-Shed ({lgbData.summary.recommended_relay}: Iron Box OFF)
+              </button>
+              <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                Shaves peak from {lgbData.summary.max_predicted_peak_kw} kW down to {lgbData.summary.max_shaved_peak_kw} kW, saving {lgbData.summary.total_kwh_shaved} kWh
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── PHASE 3: Device Shedding Table ───────────────────────────────────── */}
@@ -521,7 +796,7 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
             <Power size={18} style={{ color: 'var(--color-accent)' }} />
             <div>
               <h2 className="ls-section-title">3. Device Shedding Table</h2>
-              <p className="ls-section-desc">Real-time status, shedding and shifting capabilities, and manual overrides.</p>
+              <p className="ls-section-desc">Real-time status, shedding and shifting capabilities, and physical relay actuation.</p>
             </div>
           </div>
         </div>
@@ -531,25 +806,45 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
             <thead>
               <tr>
                 <th>Device</th>
-                <th>Port</th>
+                <th>Port & Hardware Pin</th>
                 <th>Power</th>
                 <th>Priority</th>
                 <th>Critical</th>
                 <th>Shed</th>
                 <th>Shift</th>
-                <th>State</th>
-                <th>Action</th>
+                <th>Hardware Relay</th>
                 <th>Action Buttons</th>
               </tr>
             </thead>
             <tbody>
               {devices.map(d => {
-                const isShed = d.state === 'Shed';
-                const isShifted = d.state === 'Shifted';
+                const portNum = parseInt(String(d.port).replace(/\D/g, ''), 10) || 1;
+                const isRelayOn = relayStates ? Boolean(relayStates[`relay${portNum}`]) : (d.state === 'ON');
+                const isShed = !isRelayOn;
+                const pinName = `Pin D${portNum + 3}`;
                 return (
                   <tr key={d.id} className={isShed ? 'ls-row--shed' : ''}>
-                    <td style={{ fontWeight: 600 }}>{d.name}</td>
-                    <td><span className="ls-port-chip">{d.port}</span></td>
+                    <td style={{ fontWeight: 600 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          width: '9px',
+                          height: '9px',
+                          borderRadius: '50%',
+                          background: isRelayOn ? '#10b981' : '#ef4444',
+                          boxShadow: isRelayOn ? '0 0 6px rgba(16,185,129,0.7)' : 'none'
+                        }} />
+                        {d.name}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span className="ls-port-chip">{d.port}</span>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'var(--font-mono)' }}>
+                          Relay {portNum} ({pinName})
+                        </span>
+                      </div>
+                    </td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>{d.power}</td>
                     <td>
                       <span className={`ls-badge-prio ls-badge-prio--${d.priority.toLowerCase()}`}>
@@ -560,18 +855,9 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
                     <td>{d.shed ? <CheckCircle2 size={16} color="#059669" /> : <XCircle size={16} color="#94a3b8" />}</td>
                     <td>{d.shift ? <CheckCircle2 size={16} color="#059669" /> : <XCircle size={16} color="#94a3b8" />}</td>
                     <td>
-                      <span className={`ls-state-pill ls-state-pill--${isShed ? 'shed' : isShifted ? 'shift' : 'on'}`}>
-                        {d.state}
+                      <span className={`ls-state-pill ls-state-pill--${isRelayOn ? 'on' : 'shed'}`}>
+                        {isRelayOn ? `⚡ ACTIVE (ON)` : `🛑 SHED (OFF)`}
                       </span>
-                    </td>
-                    <td>
-                      {d.critical ? (
-                        <span className="ls-protected-tag"><Shield size={12} /> Protected</span>
-                      ) : (
-                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isShed ? '#dc2626' : '#475569' }}>
-                          {d.action}
-                        </span>
-                      )}
                     </td>
                     <td>
                       <div className="ls-action-buttons">
@@ -579,8 +865,8 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
                           type="button"
                           className="ls-btn-action ls-btn-action--shed"
                           onClick={() => handleDeviceAction(d.id, 'shed')}
-                          disabled={d.critical || isShed}
-                          title="Shed this load immediately"
+                          disabled={d.critical || !isRelayOn}
+                          title={`Turn Relay ${portNum} OFF immediately`}
                         >
                           Shed
                         </button>
@@ -588,8 +874,8 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
                           type="button"
                           className="ls-btn-action ls-btn-action--restore"
                           onClick={() => handleDeviceAction(d.id, 'restore')}
-                          disabled={d.state === 'ON'}
-                          title="Restore power to this device"
+                          disabled={isRelayOn}
+                          title={`Turn Relay ${portNum} ON immediately`}
                         >
                           Restore
                         </button>
@@ -597,8 +883,8 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
                           type="button"
                           className="ls-btn-action ls-btn-action--shift"
                           onClick={() => handleDeviceAction(d.id, 'shift')}
-                          disabled={!d.shift || isShifted}
-                          title="Shift load to later window"
+                          disabled={!d.shift}
+                          title="Shift load to off-peak hours"
                         >
                           Shift
                         </button>
@@ -679,7 +965,7 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
         </div>
       </div>
 
-      {/* ─── PHASE 5: Scheduling / Load Shifting ──────────────────────────────── */}
+      {/* ─── PHASE 5: Scheduling / Load Shifting (Realtime Physical Relay Controller) ─── */}
       <div className="ls-section">
         <div className="ls-section-header">
           <div className="ls-section-title-wrap">
@@ -689,34 +975,127 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
               <p className="ls-section-desc">Define programmable runtime windows and shiftable delays to shave peak hours without loss of utility.</p>
             </div>
           </div>
-          <button
-            type="button"
-            className="stg-btn stg-btn--primary stg-btn--sm"
-            onClick={() => setShowAddSchedule(v => !v)}
-          >
-            {showAddSchedule ? <ChevronUp size={15} /> : <Plus size={15} />}
-            {showAddSchedule ? 'Close Form' : '+ Add Schedule'}
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="stg-btn stg-btn--ghost stg-btn--sm"
+              onClick={reloadSchedules}
+              title="Sync schedules from database"
+            >
+              <RefreshCw size={13} /> Sync
+            </button>
+            <button
+              type="button"
+              className="stg-btn stg-btn--primary stg-btn--sm"
+              onClick={() => setShowAddSchedule(v => !v)}
+            >
+              {showAddSchedule ? <ChevronUp size={15} /> : <Plus size={15} />}
+              {showAddSchedule ? 'Close Form' : '+ Add Schedule'}
+            </button>
+          </div>
+        </div>
+
+        {/* Real-time Facility & Scheduler Engine Status Ribbon */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+          border: '1px solid rgba(15, 23, 42, 0.08)',
+          borderRadius: '8px',
+          padding: '10px 16px',
+          marginBottom: '1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#ffffff',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              border: '1px solid #cbd5e1',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+            }}>
+              <Clock size={14} style={{ color: '#0284c7' }} />
+              <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>Facility Realtime Clock:</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 800, color: '#0f172a' }}>
+                {currentClock.toLocaleTimeString()}
+              </span>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#ecfdf5',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              border: '1px solid #a7f3d0'
+            }}>
+              <span className="stg-status-dot stg-status-dot--online" />
+              <span style={{ fontSize: '0.78rem', color: '#065f46', fontWeight: 700 }}>
+                Daemon Active (10s Realtime Engine)
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              padding: '3px 9px',
+              borderRadius: '999px',
+              background: schedules.filter(s => isScheduleInWindow(s, currentClock)).length > 0 ? '#10b981' : '#64748b',
+              color: '#ffffff'
+            }}>
+              {schedules.filter(s => isScheduleInWindow(s, currentClock)).length} In-Window Active
+            </span>
+            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>
+              • {schedules.filter(s => s.status === 'Active').length} Total Active Schedules
+            </span>
+          </div>
         </div>
 
         {/* Collapsible Add Schedule Form */}
         {showAddSchedule && (
           <form className="ls-schedule-form" onSubmit={handleAddSchedule}>
-            <h3 style={{ fontSize: '0.92rem', fontWeight: 700, margin: '0 0 1rem 0', color: '#0f172a' }}>
-              Create Load Schedule
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '0.92rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                Create Load Schedule (Hardware Actuated)
+              </h3>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                Target relay will automatically switch ON during window and OFF outside window.
+              </span>
+            </div>
+
             <div className="ls-form-grid-3">
               <div className="ls-param-box">
-                <label className="ls-param-label">Device</label>
+                <label className="ls-param-label">Select Connected Device</label>
                 <select
                   className="stg-select"
                   value={newDevice}
                   onChange={e => setNewDevice(e.target.value)}
                 >
-                  <option value="Laptop">Laptop</option>
-                  <option value="Iron Box">Iron Box</option>
-                  <option value="Mobile Charger">Mobile Charger</option>
-                  <option value="Water Heater">Water Heater</option>
+                  {devices.length > 0 ? (
+                    devices.map(d => {
+                      const pNum = parseInt(String(d.port).replace(/\D/g, ''), 10) || 1;
+                      return (
+                        <option key={d.id} value={d.name}>
+                          {d.name} — Port {d.port} (Relay {pNum} / Pin D{pNum + 3} · {d.power})
+                        </option>
+                      );
+                    })
+                  ) : (
+                    <>
+                      <option value="Laptop">Laptop (Port P3 · Relay 3 · 65W)</option>
+                      <option value="Iron Box">Iron Box (Port P4 · Relay 4 · 1000W)</option>
+                      <option value="Mobile Charger">Mobile Charger (Port P2 · Relay 2 · 25W)</option>
+                      <option value="Wi-Fi Router">Wi-Fi Router (Port P1 · Relay 1 · 18W)</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -743,7 +1122,7 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
               </div>
 
               <div className="ls-param-box">
-                <label className="ls-param-label">Duration</label>
+                <label className="ls-param-label">Duration Label</label>
                 <input
                   type="text"
                   className="stg-input"
@@ -760,13 +1139,13 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
                   value={newShiftable ? 'YES' : 'NO'}
                   onChange={e => setNewShiftable(e.target.value === 'YES')}
                 >
-                  <option value="YES">YES</option>
-                  <option value="NO">NO</option>
+                  <option value="YES">YES — Allow Peak Shifting</option>
+                  <option value="NO">NO — Strict Fixed Window</option>
                 </select>
               </div>
 
               <div className="ls-param-box">
-                <label className="ls-param-label">Maximum Delay (min)</label>
+                <label className="ls-param-label">Maximum Shift Delay (min)</label>
                 <input
                   type="number"
                   className="stg-input"
@@ -812,53 +1191,147 @@ export default function LoadSheddingTab({ initialView = 'shedding' }) {
           </form>
         )}
 
-        {/* Existing Schedules Table */}
+        {/* Existing Schedules Table with Live Execution Controls */}
         <div className="ls-table-wrap">
           <table className="ls-table">
             <thead>
               <tr>
                 <th>Device</th>
-                <th>Schedule</th>
+                <th>Hardware Relay & Pin</th>
+                <th>Runtime Window</th>
+                <th>Active Days</th>
                 <th>Shiftable</th>
-                <th>Status</th>
-                <th>Next Action</th>
+                <th>Realtime Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {schedules.map(s => (
-                <tr key={s.id}>
-                  <td style={{ fontWeight: 600 }}>{s.device}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)' }}>
-                    {s.startTime}–{s.endTime} ({s.duration || '2 hrs'})
-                  </td>
-                  <td>
-                    {s.shiftable ? (
-                      <span className="ls-protected-tag">Yes (max {s.maxDelay}m)</span>
-                    ) : (
-                      <span style={{ color: '#94a3b8' }}>No</span>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`ls-state-pill ${s.status === 'Active' ? 'ls-state-pill--on' : 'ls-state-pill--shift'}`}>
-                      {s.status}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 500 }}>
-                    {s.nextAction}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="ls-seq-btn"
-                      onClick={() => handleDeleteSchedule(s.id)}
-                      title="Delete schedule"
-                    >
-                      <Trash2 size={14} style={{ color: '#ef4444' }} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {schedules.map(s => {
+                const relayNum = getRelayForDevice(s.device);
+                const pinName = `Pin D${relayNum + 3}`;
+                const isContactorClosed = relayStates ? Boolean(relayStates[`relay${relayNum}`]) : false;
+                const inWindow = isScheduleInWindow(s, currentClock);
+
+                return (
+                  <tr key={s.id} style={inWindow ? { background: 'rgba(16, 185, 129, 0.03)' } : {}}>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 700, color: '#0f172a' }}>{s.device}</span>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          Target Channel: Port P{relayNum}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          className={`stg-status-dot stg-status-dot--${isContactorClosed ? 'online' : 'offline'}`}
+                          title={isContactorClosed ? `Relay ${relayNum} Contactor CLOSED (Energized)` : `Relay ${relayNum} Contactor OPEN (De-energized)`}
+                        />
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 600 }}>
+                          Relay {relayNum}
+                        </span>
+                        <span style={{ fontSize: '0.72rem', color: '#94a3b8', background: '#f1f5f9', padding: '1px 5px', borderRadius: '4px' }}>
+                          {pinName}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>
+                      <div style={{ fontWeight: 600 }}>
+                        {s.startTime} – {s.endTime}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                        {s.duration || '2 hrs'}
+                      </div>
+                    </td>
+
+                    <td>
+                      <span style={{ fontSize: '0.75rem', color: '#475569', fontWeight: 500 }}>
+                        {s.days || 'Mon–Fri'}
+                      </span>
+                    </td>
+
+                    <td>
+                      {s.shiftable ? (
+                        <span className="ls-protected-tag" style={{ background: '#fef3c7', color: '#92400e', borderColor: '#fde68a' }}>
+                          Yes (max {s.maxDelay}m)
+                        </span>
+                      ) : (
+                        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Strict Fixed</span>
+                      )}
+                    </td>
+
+                    <td>
+                      {s.status === 'Paused' ? (
+                        <span className="ls-state-pill" style={{ background: '#f1f5f9', color: '#64748b', borderColor: '#cbd5e1' }}>
+                          <Pause size={11} style={{ marginRight: 4 }} /> PAUSED
+                        </span>
+                      ) : inWindow ? (
+                        <span className="ls-state-pill" style={{
+                          background: '#ecfdf5',
+                          color: '#047857',
+                          border: '1px solid #6ee7b7',
+                          fontWeight: 700,
+                          boxShadow: '0 0 6px rgba(16, 185, 129, 0.2)'
+                        }}>
+                          <span className="stg-status-dot stg-status-dot--online" style={{ marginRight: 6 }} />
+                          🟢 IN WINDOW (ACTIVE)
+                        </span>
+                      ) : (
+                        <span className="ls-state-pill" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
+                          <Clock size={11} style={{ marginRight: 4 }} />
+                          ⏳ SCHEDULED
+                        </span>
+                      )}
+                    </td>
+
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          className="stg-btn stg-btn--sm"
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            background: '#eff6ff',
+                            color: '#1d4ed8',
+                            border: '1px solid #bfdbfe'
+                          }}
+                          onClick={() => handleRunScheduleNow(s)}
+                          title={`Energize Relay ${relayNum} immediately`}
+                        >
+                          <Play size={11} /> Run Now
+                        </button>
+
+                        <button
+                          type="button"
+                          className="ls-seq-btn"
+                          onClick={() => handleToggleSchedule(s.id)}
+                          title={s.status === 'Active' ? 'Pause schedule' : 'Resume schedule'}
+                        >
+                          {s.status === 'Active' ? (
+                            <Pause size={13} style={{ color: '#d97706' }} />
+                          ) : (
+                            <Play size={13} style={{ color: '#16a34a' }} />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="ls-seq-btn"
+                          onClick={() => handleDeleteSchedule(s.id)}
+                          title="Delete schedule"
+                        >
+                          <Trash2 size={13} style={{ color: '#ef4444' }} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

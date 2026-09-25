@@ -6,8 +6,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Server, Zap, Shield, Settings, Sliders, HardDrive, RefreshCw, 
   Plus, Check, Upload, Image as ImageIcon, Camera, Trash2, ArrowLeft,
-  CheckCircle2, Edit3, Eye, Database, Clock
+  CheckCircle2, Edit3, Eye, Database, Clock, Power, Wifi
 } from 'lucide-react';
+import { useEsp32 } from './useEsp32.js';
 
 import wifiRouterImg from './assets/devices/wifi_router.jpg';
 import mobileChargerImg from './assets/devices/mobile_charger.jpg';
@@ -50,6 +51,7 @@ const getInitialDevices = () => {
 };
 
 export default function DeviceConfigTab() {
+  const { esp32, relayStates, sendRelayCommand } = useEsp32();
   // Navigation Flow: 'list' (All Devices) | 'new' (New Device) | 'detail' (View Details) | 'edit' (Edit Device)
   const [currentView, setCurrentView] = useState('list');
   const [isEditingDevice, setIsEditingDevice] = useState(false);
@@ -64,6 +66,16 @@ export default function DeviceConfigTab() {
   });
   const [statusNotification, setStatusNotification] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dbConnected, setDbConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Helper to extract port number & physical relay state for a device
+  const getDeviceRelay = (dev) => {
+    const rawPort = String(dev?.port || '');
+    const num = parseInt(rawPort.replace(/\D/g, ''), 10) || 1;
+    const isRelayOn = Boolean(relayStates?.[`relay${num}`]);
+    return { portNum: num, isRelayOn };
+  };
 
   // Helper to keep both React state and localStorage cache in sync
   const updateDevicesAndCache = (newDevicesList) => {
@@ -148,6 +160,7 @@ export default function DeviceConfigTab() {
 
   // 1. Initial Load: Fetch devices from MySQL database
   const loadDevicesFromDB = async () => {
+    setIsLoading(true);
     try {
       const res = await fetch('/api/devices');
       if (res.ok) {
@@ -245,7 +258,13 @@ export default function DeviceConfigTab() {
 
     return () => {
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) ws.close();
+      if (ws) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.onopen = () => ws.close();
+        }
+      }
     };
   }, []);
 
@@ -614,12 +633,17 @@ export default function DeviceConfigTab() {
           <div className="devices-catalog-grid">
             {devices.map(dev => {
               const pMeta = priorityMeta[dev.priority] || priorityMeta.low;
+              const { portNum, isRelayOn } = getDeviceRelay(dev);
               return (
                 <div key={dev.id} className="device-catalog-card">
                   {/* Image Presentation */}
                   <div className="catalog-image-wrap">
                     <img src={dev.image} alt={dev.name} className="catalog-device-img" />
                     <span className="catalog-port-badge">{dev.port}</span>
+                    <span className={`catalog-relay-badge ${isRelayOn ? 'catalog-relay-badge--on' : 'catalog-relay-badge--off'}`}>
+                      <span className="relay-dot" />
+                      {isRelayOn ? 'Relay ON' : 'Relay OFF'}
+                    </span>
                     <span className={`catalog-status-badge ${dev.status === 'online' ? 'status-online' : 'status-offline'}`}>
                       <span className="status-dot" />
                       {dev.status === 'online' ? 'Online' : 'Offline'}
@@ -654,6 +678,18 @@ export default function DeviceConfigTab() {
                         {dev.autoShed ? 'Auto-Shed: YES' : 'Auto-Shed: NO'}
                       </span>
                       <div className="catalog-actions-group">
+                        <button
+                          type="button"
+                          className={`catalog-btn-relay ${isRelayOn ? 'catalog-btn-relay--on' : 'catalog-btn-relay--off'}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            sendRelayCommand(isRelayOn ? `R${portNum}_OFF` : `R${portNum}_ON`);
+                          }}
+                          title={`Toggle Physical Relay ${portNum} (Pin D${3 + portNum}) over Wi-Fi`}
+                        >
+                          <Power size={13} />
+                          <span>{isRelayOn ? 'Relay ON' : 'Relay OFF'}</span>
+                        </button>
                         <button
                           type="button"
                           className="catalog-btn-view"
@@ -1390,6 +1426,27 @@ export default function DeviceConfigTab() {
                     <div className="detail-view-item">
                       <span className="detail-view-label">Assigned Port *</span>
                       <span className="detail-view-value accent">{activeDevice.port}</span>
+                    </div>
+                    <div className="detail-view-item">
+                      <span className="detail-view-label">Realtime Relay *</span>
+                      {(() => {
+                        const { portNum, isRelayOn } = getDeviceRelay(activeDevice);
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="detail-view-value mono">Relay {portNum} (Pin D{3 + portNum})</span>
+                            <button
+                              type="button"
+                              className={`catalog-btn-relay ${isRelayOn ? 'catalog-btn-relay--on' : 'catalog-btn-relay--off'}`}
+                              onClick={() => sendRelayCommand(isRelayOn ? `R${portNum}_OFF` : `R${portNum}_ON`)}
+                              title={`Toggle Relay ${portNum} over Wi-Fi`}
+                              style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                            >
+                              <Power size={12} />
+                              {isRelayOn ? 'Switch OFF' : 'Switch ON'}
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="detail-view-item">
                       <span className="detail-view-label">Sensor Channel *</span>

@@ -336,6 +336,44 @@
   text-transform: uppercase;
 }
 
+.catalog-relay-badge {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  backdrop-filter: blur(8px);
+}
+
+.catalog-relay-badge--on {
+  background: rgba(5, 150, 105, 0.88);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.catalog-relay-badge--off {
+  background: rgba(30, 41, 59, 0.85);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.catalog-relay-badge .relay-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.catalog-relay-badge--on .relay-dot {
+  animation: pulseDot 1.5s infinite;
+}
+
 .catalog-status-badge {
   position: absolute;
   top: 12px;
@@ -513,6 +551,45 @@
 .catalog-btn-del:hover {
   background: #e11d48;
   color: #ffffff;
+}
+
+.catalog-btn-relay {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.38rem 0.65rem;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.catalog-btn-relay--on {
+  background: rgba(5, 150, 105, 0.12);
+  border-color: rgba(5, 150, 105, 0.35);
+  color: #059669;
+}
+
+.catalog-btn-relay--on:hover {
+  background: #059669;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+}
+
+.catalog-btn-relay--off {
+  background: rgba(100, 116, 139, 0.1);
+  border-color: rgba(100, 116, 139, 0.25);
+  color: #64748b;
+}
+
+.catalog-btn-relay--off:hover {
+  background: #1d64f2;
+  border-color: #1d64f2;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(29, 100, 242, 0.3);
 }
 
 /* ─── Inspection View Mode Styles ────────────────────────────────────────── */

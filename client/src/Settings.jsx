@@ -12,13 +12,14 @@ import {
   Mail, MessageSquare, Webhook, RefreshCw,
   Eye, Copy, Check, Database, Power, Cpu,
   Search, ArrowLeft, ArrowRight, ChevronDown, Plus, SlidersHorizontal,
-  Settings as SettingsIcon, CheckCircle2, Code, HardDrive, Sparkles
+  Settings as SettingsIcon, CheckCircle2, Code, HardDrive, Sparkles, TrendingUp
 } from 'lucide-react';
 import { useEsp32 } from './useEsp32.js';
 import DeviceConfigTab from './DeviceConfig.jsx';
 import LoadSheddingTab from './LoadShedding.jsx';
 import LoadRecommendationsTab from './LoadRecommendations.jsx';
 import RelayControllerTab from './RelayController.jsx';
+import PeakFinancialAnalysisTab from './PeakFinancialAnalysis.jsx';
 import { ESP32_FIRMWARE_CODE } from './esp32FirmwareCode.js';
 import './Settings.css';
 
@@ -28,6 +29,7 @@ const TABS = [
   { id: 'port',            label: 'Port configuration',          shortLabel: 'Ports',         icon: Plug,       badge: null,     hasDot: false, desc: 'Configure Relays & Sensor ports' },
   { id: 'controller',      label: 'Relay Controller',            shortLabel: 'Relays',        icon: Cpu,        badge: 'UART',   hasDot: true,  desc: 'ESP32 Wi-Fi to Arduino UART Relay Controller' },
   { id: 'peak',            label: 'Load shedding / Scheduling',  shortLabel: 'Shedding',      icon: Zap,        badge: 'AUTO',   hasDot: true,  desc: 'Automated peak protection & load shifting' },
+  { id: 'analytics',       label: 'Main Peak & Financial Analysis', shortLabel: 'Analysis',   icon: TrendingUp, badge: 'PRO',    hasDot: true,  desc: 'Before/After Peak Prediction & Financial ROI' },
   { id: 'recommendations', label: 'Load Recommendations',        shortLabel: 'AI Recomms',    icon: Sparkles,   badge: 'AI',     hasDot: true,  desc: 'AI peak mitigation advice & impact' },
   { id: 'status',          label: 'Status & Telemetry',          shortLabel: 'Telemetry',     icon: Activity,   badge: 'LIVE',   hasDot: true,  desc: 'Live ESP32 telemetry & system health' },
   { id: 'logs',            label: 'System Logs',                 shortLabel: 'Logs',          icon: ScrollText, badge: null,     hasDot: false, desc: 'Real-time platform event stream' },
@@ -284,8 +286,15 @@ function normalizePort(p) {
   };
 }
 
+const DEVICE_WATTS = {
+  1: 12,    // Wi-Fi Router
+  2: 25,    // Mobile Charger
+  3: 65,    // Laptop Workstation
+  4: 1200   // Electric Iron
+};
+
 function PortConfigTab() {
-  const { esp32 } = useEsp32();
+  const { esp32, relayStates, sendRelayCommand } = useEsp32();
   const [ports, setPorts] = useState(() => HARDWARE_PORT_DEFAULTS.map(normalizePort));
   const [selectedPortId, setSelectedPortId] = useState('P-001');
   const [availableDevices, setAvailableDevices] = useState([
@@ -294,6 +303,7 @@ function PortConfigTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [pendingRelay, setPendingRelay] = useState(false);
 
   // Fetch real ports from server/DB on mount
   useEffect(() => {
@@ -444,16 +454,27 @@ function PortConfigTab() {
     }
   };
 
-  // Derive dynamic live telemetry
+  // Derive dynamic live telemetry linked to physical relay state
   const portIdx = activePort.port_number || activePort.portNumber || 1;
+  const isRelayOn = Boolean(relayStates?.[`relay${portIdx}`]);
+  const ratedWatts = DEVICE_WATTS[portIdx] || activePort.live_power || 50;
+
   const espVolt = esp32?.latestTelemetry?.voltage;
   const espCurr = esp32?.latestTelemetry?.[`current${portIdx}`];
   const espPower = esp32?.latestTelemetry?.[`power${portIdx}`];
 
-  const liveVoltage = espVolt !== undefined ? Number(espVolt).toFixed(1) : (activePort.live_voltage ?? activePort.liveVoltage ?? 229.4);
-  const liveCurrent = espCurr !== undefined ? Number(espCurr).toFixed(2) : (activePort.live_current ?? activePort.liveCurrent ?? 1.82);
-  const livePower = espPower !== undefined ? Math.round(espPower) : (activePort.live_power ?? activePort.livePower ?? 418);
-  const liveStatus = (activePort.live_status || activePort.liveStatus || 'NORMAL').toUpperCase();
+  const liveVoltage = espVolt !== undefined ? Number(espVolt).toFixed(1) : (activePort.rated_voltage ?? activePort.ratedVoltage ?? 229.4);
+  
+  // Real physical load calculation: if relay is open/OFF, 0W and 0.00A flow
+  const livePower = isRelayOn
+    ? (espPower !== undefined && espPower > 0 ? Math.round(espPower) : ratedWatts)
+    : 0;
+
+  const liveCurrent = isRelayOn
+    ? (espCurr !== undefined && espCurr > 0 ? Number(espCurr).toFixed(2) : (ratedWatts / (parseFloat(liveVoltage) || 230)).toFixed(2))
+    : '0.00';
+
+  const liveStatus = isRelayOn ? 'NORMAL (ENERGIZED)' : 'SHED (RELAY OFF)';
 
   return (
     <form className="stg-form" onSubmit={handleSave} id="port-config-form">
@@ -463,13 +484,18 @@ function PortConfigTab() {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
             <h2 className="stg-section-title">PORT Configuration</h2>
-            <span className="stg-badge stg-badge--active" style={{ fontSize: '0.72rem', padding: '3px 8px' }}>
-              <span className="stg-status-dot stg-status-dot--online"></span>
-              4-Channel Arduino Controller Connected
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="stg-badge stg-badge--active" style={{ fontSize: '0.72rem', padding: '3px 8px' }}>
+                <span className="stg-status-dot stg-status-dot--online"></span>
+                ESP32 Wi-Fi Node: {esp32?.ip || '10.38.24.77'}
+              </span>
+              <span className="stg-badge" style={{ fontSize: '0.72rem', padding: '3px 8px', background: 'rgba(29,100,242,0.1)', color: 'var(--color-accent)' }}>
+                Arduino UNO Controller
+              </span>
+            </div>
           </div>
           <p className="stg-section-desc">
-            Configure AC output ports, hardware pin mappings for Arduino UNO relays and sensors, and electrical limits.
+            Configure AC output ports, hardware pin mappings for Arduino UNO relays and sensors, and electrical limits. Realtime relay state is synchronized over Wi-Fi.
           </p>
         </div>
       </div>
@@ -482,21 +508,34 @@ function PortConfigTab() {
           const pName = p.port_name || p.name || `Port ${p.port_number || p.portNumber || 1}`;
           const pPin = p.relay_pin || p.relayPin || 'D4';
           const pDev = p.connected_device || p.connectedDevice || 'Unassigned';
-          const pStatus = p.port_status || p.status || 'Online';
+          const pNum = p.port_number || p.portNumber || 1;
+          const isPortRelayActive = Boolean(relayStates?.[`relay${pNum}`]);
+          const portWatts = DEVICE_WATTS[pNum] || 50;
+
           return (
             <button
               key={pId}
               type="button"
-              className={`port-select-card ${isSelected ? 'port-select-card--active' : ''}`}
+              className={`port-select-card ${isSelected ? 'port-select-card--active' : ''} ${isPortRelayActive ? 'port-select-card--energized' : 'port-select-card--shed'}`}
               onClick={() => setSelectedPortId(pId)}
             >
               <div className="port-card-top">
                 <span className="port-card-title">{pName}</span>
-                <span className={`stg-status-dot stg-status-dot--${pStatus.toLowerCase() === 'online' ? 'online' : 'offline'}`} />
+                <span className={`port-relay-badge ${isPortRelayActive ? 'port-relay-badge--on' : 'port-relay-badge--off'}`}>
+                  <span className="relay-badge-dot" />
+                  {isPortRelayActive ? 'RELAY ON' : 'RELAY OFF'}
+                </span>
               </div>
-              <div className="port-card-id">{pId} • {pPin}</div>
+              <div className="port-card-id">{pId} • Pin {pPin}</div>
               <div className="port-card-device" title={pDev}>
                 {pDev}
+              </div>
+              <div className="port-card-live-pill">
+                <span className="pcl-power">{isPortRelayActive ? `${portWatts} W` : '0 W'}</span>
+                <span className="pcl-sep">•</span>
+                <span className={`pcl-status ${isPortRelayActive ? 'pcl-status--on' : 'pcl-status--off'}`}>
+                  {isPortRelayActive ? 'ENERGIZED' : 'SHED'}
+                </span>
               </div>
             </button>
           );
@@ -504,15 +543,15 @@ function PortConfigTab() {
       </div>
 
       {/* Live Values Display HUD */}
-      <div className="port-live-telemetry-hud">
+      <div className={`port-live-telemetry-hud ${isRelayOn ? 'hud--energized' : 'hud--shed'}`}>
         <div className="hud-title-bar">
           <div className="hud-title-left">
-            <Activity size={15} className="pulse-accent" />
-            <span>Live Values — {activePort.port_name || activePort.name || 'Port 1'} ({activePort.connected_device || activePort.connectedDevice || 'Unassigned'})</span>
+            <Activity size={15} className={`pulse-accent ${isRelayOn ? 'icon-on' : 'icon-off'}`} />
+            <span>Live Hardware Values — {activePort.port_name || activePort.name || 'Port 1'} ({activePort.connected_device || activePort.connectedDevice || 'Unassigned'})</span>
           </div>
-          <div className="hud-status-badge">
-            <span className="stg-status-dot stg-status-dot--online"></span>
-            Status: <strong>{liveStatus}</strong>
+          <div className={`hud-status-badge ${isRelayOn ? 'hud-status-badge--on' : 'hud-status-badge--off'}`}>
+            <span className={`stg-status-dot ${isRelayOn ? 'stg-status-dot--online' : 'stg-status-dot--offline'}`} />
+            Circuit: <strong>{liveStatus}</strong>
           </div>
         </div>
 
@@ -523,13 +562,13 @@ function PortConfigTab() {
               <span className="metric-val">{liveVoltage}</span>
               <span className="metric-unit">V</span>
             </div>
-            <span className="metric-sub">Rated: {activePort.rated_voltage ?? activePort.ratedVoltage ?? 230} V</span>
+            <span className="metric-sub">Bus: {activePort.rated_voltage ?? activePort.ratedVoltage ?? 230} V</span>
           </div>
 
           <div className="metric-box">
             <span className="metric-label">Current</span>
             <div className="metric-val-wrap">
-              <span className="metric-val">{liveCurrent}</span>
+              <span className={`metric-val ${isRelayOn ? 'metric-val--live' : ''}`}>{liveCurrent}</span>
               <span className="metric-unit">A</span>
             </div>
             <span className="metric-sub">Max: {activePort.max_current ?? activePort.maxCurrent ?? 10} A</span>
@@ -538,18 +577,20 @@ function PortConfigTab() {
           <div className="metric-box">
             <span className="metric-label">Power</span>
             <div className="metric-val-wrap">
-              <span className="metric-val">{livePower}</span>
+              <span className={`metric-val ${isRelayOn ? 'metric-val--live' : ''}`}>{livePower}</span>
               <span className="metric-unit">{activePort.measurement_unit || activePort.measureUnit || 'W'}</span>
             </div>
-            <span className="metric-sub">Limit: {activePort.max_power ?? activePort.maxPower ?? 2300} W</span>
+            <span className="metric-sub">Rated: {ratedWatts} W</span>
           </div>
 
           <div className="metric-box">
-            <span className="metric-label">Status</span>
+            <span className="metric-label">Relay Controller State</span>
             <div className="metric-val-wrap">
-              <span className="metric-val metric-val--status">{liveStatus}</span>
+              <span className={`metric-val metric-val--status ${isRelayOn ? 'status-text-on' : 'status-text-off'}`}>
+                {isRelayOn ? 'ENERGIZED' : 'SHED'}
+              </span>
             </div>
-            <span className="metric-sub">PF: {activePort.power_factor ?? activePort.powerFactor ?? 0.95}</span>
+            <span className="metric-sub">Relay {portIdx} · Pin {activePort.relay_pin || 'D4'}</span>
           </div>
         </div>
       </div>
@@ -675,7 +716,87 @@ function PortConfigTab() {
         
         <div className="hardware-mapping-banner">
           <Zap size={15} style={{ color: 'var(--color-accent)' }} />
-          <span>This connects the web configuration to your Arduino hardware.</span>
+          <span>This connects the web configuration to your Arduino hardware & ESP32 Wi-Fi relay controller.</span>
+        </div>
+
+        {/* Realtime Physical Relay Controller Strip */}
+        <div className={`port-relay-action-strip ${isRelayOn ? 'pras--active' : 'pras--inactive'}`}>
+          <div className="pras-header">
+            <div className="pras-header-left">
+              <div className={`pras-icon-ring ${isRelayOn ? 'pras-icon-ring--active' : ''}`}>
+                <Power size={20} />
+              </div>
+              <div>
+                <div className="pras-title-row">
+                  <h4 className="pras-title">Realtime Hardware Relay Controller</h4>
+                  <span className={`pras-live-tag ${isRelayOn ? 'pras-live-tag--on' : 'pras-live-tag--off'}`}>
+                    <span className="pras-pulse" />
+                    {isRelayOn ? 'RELAY ENERGIZED (ON)' : 'CIRCUIT OPEN / SHED (OFF)'}
+                  </span>
+                </div>
+                <p className="pras-subtitle">
+                  Direct physical relay switching for <strong>{activePort.connected_device || activePort.connectedDevice || `Port ${portIdx}`}</strong> on Arduino pin <strong>{activePort.relay_pin || 'D4'}</strong> via ESP32 Wi-Fi Node (<code>{esp32?.ip || '10.38.24.77'}</code>).
+                </p>
+              </div>
+            </div>
+
+            {/* Direct Big Switch Button */}
+            <button
+              type="button"
+              disabled={pendingRelay}
+              className={`pras-toggle-btn ${isRelayOn ? 'pras-toggle-btn--off' : 'pras-toggle-btn--on'}`}
+              onClick={async () => {
+                setPendingRelay(true);
+                try {
+                  await sendRelayCommand(isRelayOn ? `R${portIdx}_OFF` : `R${portIdx}_ON`);
+                } finally {
+                  setTimeout(() => setPendingRelay(false), 300);
+                }
+              }}
+              id={`toggle-port-relay-${portIdx}`}
+            >
+              {pendingRelay ? (
+                <><RefreshCw size={17} className="stg-spin" /> Switching...</>
+              ) : isRelayOn ? (
+                <><Power size={17} /> Turn Relay {portIdx} OFF (Shed Load)</>
+              ) : (
+                <><Power size={17} /> Turn Relay {portIdx} ON (Energize Port)</>
+              )}
+            </button>
+          </div>
+
+          <div className="pras-footer-bar">
+            <div className="pras-meta-chips">
+              <span className="pras-meta-chip">
+                <strong>Target:</strong> Relay {portIdx} ({activePort.relay_pin || 'D4'})
+              </span>
+              <span className="pras-meta-chip">
+                <strong>Logic:</strong> {portIdx >= 3 ? 'Active-HIGH (Inverted)' : 'Active-LOW (Standard)'}
+              </span>
+              <span className="pras-meta-chip">
+                <strong>Hardware Route:</strong> <code>POST http://{esp32?.ip || '10.38.24.77'}/relay/{portIdx}/{isRelayOn ? 'off' : 'on'}</code>
+              </span>
+            </div>
+
+            <div className="pras-bus-controls">
+              <button
+                type="button"
+                className="pras-mini-btn pras-mini-btn--on"
+                onClick={() => sendRelayCommand('ALL_ON')}
+                title="Energize all 4 physical relays sequentially"
+              >
+                <Zap size={13} /> All Ports ON
+              </button>
+              <button
+                type="button"
+                className="pras-mini-btn pras-mini-btn--off"
+                onClick={() => sendRelayCommand('ALL_OFF')}
+                title="Immediately disconnect and shed all 4 relays"
+              >
+                <AlertTriangle size={13} /> Shed All Ports (ALL_OFF)
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="stg-grid-3">
@@ -1588,11 +1709,36 @@ export function PortsConfigTab() {
 }
 
 export default function SettingsPage({ onBack, defaultTab = 'port' }) {
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [activeTab, setActiveTab] = useState(() => {
+    const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : '';
+    if (hash && ['device', 'port', 'controller', 'relay', 'peak', 'shedding', 'analytics', 'finance', 'recommendations', 'status', 'logs', 'notifications'].includes(hash)) {
+      return hash;
+    }
+    return defaultTab;
+  });
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
+
+  const changeTab = (tabId) => {
+    setActiveTab(tabId);
+    try {
+      window.location.hash = tabId;
+    } catch {}
+  };
+
+  // Sync tab with URL hash if changed externally
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash && ['device', 'port', 'controller', 'relay', 'peak', 'shedding', 'analytics', 'finance', 'recommendations', 'status', 'logs', 'notifications'].includes(hash)) {
+        setActiveTab(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   // Always Light Mode as requested
   useEffect(() => {
@@ -1631,6 +1777,8 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
     relay:           RelayControllerTab,
     peak:            LoadSheddingTab,
     shedding:        LoadSheddingTab,
+    analytics:       PeakFinancialAnalysisTab,
+    finance:         PeakFinancialAnalysisTab,
     recommendations: LoadRecommendationsTab,
     recom:           LoadRecommendationsTab,
     status:          Esp32Tab,
@@ -1686,7 +1834,7 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
                 key={tab.id}
                 type="button"
                 className={`ref-nav-tab ${isActive ? 'ref-nav-tab--active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => changeTab(tab.id)}
                 title={tab.label}
               >
                 <Icon size={15} className="ref-tab-icon" />
@@ -1836,7 +1984,7 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
                       role="tab"
                       aria-selected={isActive}
                       aria-controls={`panel-${tab.id}`}
-                      onClick={() => setActiveTab(tab.id)}
+                      onClick={() => changeTab(tab.id)}
                       className={`stg-sb-nav-btn ${isActive ? 'stg-sb-nav-btn--active' : ''}`}
                       type="button"
                     >
@@ -1926,7 +2074,7 @@ export default function SettingsPage({ onBack, defaultTab = 'port' }) {
                           aria-selected={isSelected}
                           className={`stg-dropdown-item ${isSelected ? 'stg-dropdown-item--active' : ''}`}
                           onClick={() => {
-                            setActiveTab(tab.id);
+                            changeTab(tab.id);
                             setIsDropdownOpen(false);
                           }}
                           type="button"

@@ -275,7 +275,6 @@
 .bc-active   { color: var(--color-text); font-weight: 500; }
 
 /* ─── Reference Image Top Navbar (Path Must) ──────────────────────────────── */
-/* ─── Reference Image Top Navbar (Path Must) ──────────────────────────────── */
 .ref-navbar {
   display: flex;
   align-items: center;
@@ -2941,5 +2940,369 @@
   color: var(--color-accent, #1d64f2);
   animation: pulseDot 2s infinite ease-in-out;
 }
+
+/* ─── Realtime Port Relay Badges & Card Enhancements ───────────────────────── */
+.port-select-card--energized {
+  border-color: rgba(5, 150, 105, 0.35);
+  background: linear-gradient(180deg, #ffffff 0%, rgba(5, 150, 105, 0.04) 100%);
+}
+
+.port-select-card--shed {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: linear-gradient(180deg, #ffffff 0%, rgba(148, 163, 184, 0.04) 100%);
+}
+
+.port-relay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.port-relay-badge--on {
+  background: rgba(5, 150, 105, 0.12);
+  color: #059669;
+  border: 1px solid rgba(5, 150, 105, 0.3);
+}
+
+.port-relay-badge--off {
+  background: rgba(100, 116, 139, 0.12);
+  color: #64748b;
+  border: 1px solid rgba(100, 116, 139, 0.25);
+}
+
+.relay-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.port-relay-badge--on .relay-badge-dot {
+  background: #059669;
+  box-shadow: 0 0 6px #059669;
+  animation: pulseDot 1.5s infinite;
+}
+
+.port-relay-badge--off .relay-badge-dot {
+  background: #94a3b8;
+}
+
+.port-card-live-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.pcl-power {
+  font-family: var(--font-mono, monospace);
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.pcl-sep {
+  color: #cbd5e1;
+}
+
+.pcl-status {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pcl-status--on {
+  color: #059669;
+}
+
+.pcl-status--off {
+  color: #64748b;
+}
+
+/* ─── Port Relay Action Strip (Section 2 Hardware Mapping) ──────────────────── */
+.port-relay-action-strip {
+  border-radius: var(--radius-md, 12px);
+  padding: 1.15rem 1.35rem;
+  margin-bottom: 1.25rem;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.port-relay-action-strip.pras--active {
+  background: linear-gradient(135deg, rgba(5, 150, 105, 0.06) 0%, rgba(29, 100, 242, 0.04) 100%);
+  border: 1px solid rgba(5, 150, 105, 0.35);
+  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.08);
+}
+
+.port-relay-action-strip.pras--inactive {
+  background: linear-gradient(135deg, rgba(100, 116, 139, 0.06) 0%, rgba(15, 23, 42, 0.03) 100%);
+  border: 1px solid rgba(100, 116, 139, 0.25);
+}
+
+.pras-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pras-header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  flex: 1;
+  min-width: 280px;
+}
+
+.pras-icon-ring {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.pras-icon-ring--active {
+  background: rgba(5, 150, 105, 0.15);
+  color: #059669;
+  box-shadow: 0 0 12px rgba(5, 150, 105, 0.25);
+}
+
+.pras-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+
+.pras-title {
+  margin: 0;
+  font-family: var(--font-display, 'Space Grotesk', sans-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.pras-live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  letter-spacing: 0.04em;
+}
+
+.pras-live-tag--on {
+  background: rgba(5, 150, 105, 0.15);
+  color: #047857;
+  border: 1px solid rgba(5, 150, 105, 0.35);
+}
+
+.pras-live-tag--off {
+  background: rgba(100, 116, 139, 0.15);
+  color: #475569;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+.pras-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pras-live-tag--on .pras-pulse {
+  animation: pulseDot 1.5s infinite;
+}
+
+.pras-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.pras-subtitle strong {
+  color: #0f172a;
+}
+
+.pras-subtitle code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* Big Toggle Button */
+.pras-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.75rem 1.45rem;
+  border-radius: var(--radius-sm, 8px);
+  font-family: var(--font-body, 'DM Sans', sans-serif);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: none;
+  white-space: nowrap;
+}
+
+.pras-toggle-btn--on {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35);
+}
+
+.pras-toggle-btn--on:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(5, 150, 105, 0.45);
+}
+
+.pras-toggle-btn--off {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.3);
+}
+
+.pras-toggle-btn--off:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.4);
+}
+
+.pras-footer-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  flex-wrap: wrap;
+}
+
+.pras-meta-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.pras-meta-chip {
+  font-size: 0.74rem;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.pras-meta-chip strong {
+  color: #334155;
+}
+
+.pras-meta-chip code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  color: #0f172a;
+}
+
+.pras-bus-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pras-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.pras-mini-btn--on {
+  background: rgba(5, 150, 105, 0.1);
+  color: #059669;
+  border-color: rgba(5, 150, 105, 0.25);
+}
+
+.pras-mini-btn--on:hover {
+  background: #059669;
+  color: #ffffff;
+}
+
+.pras-mini-btn--off {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.25);
+}
+
+.pras-mini-btn--off:hover {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+/* ─── Live Values HUD Enhancements ─────────────────────────────────────────── */
+.hud--energized {
+  border-color: rgba(5, 150, 105, 0.3);
+  background: linear-gradient(135deg, rgba(5, 150, 105, 0.06) 0%, rgba(29, 100, 242, 0.04) 100%);
+}
+
+.hud--shed {
+  border-color: rgba(148, 163, 184, 0.3);
+  background: linear-gradient(135deg, rgba(100, 116, 139, 0.05) 0%, rgba(15, 23, 42, 0.02) 100%);
+}
+
+.hud-status-badge--on {
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+  border-color: rgba(5, 150, 105, 0.3);
+}
+
+.hud-status-badge--off {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  border-color: rgba(100, 116, 139, 0.25);
+}
+
+.metric-val--live {
+  color: #059669;
+}
+
+.status-text-on {
+  color: #059669 !important;
+}
+
+.status-text-off {
+  color: #64748b !important;
+}
+
 
 

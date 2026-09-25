@@ -346,7 +346,7 @@ export async function updateRelayState(code) {
   return { ...state.relayStates };
 }
 
-function broadcastToFrontend(payload) {
+export function broadcastToFrontend(payload) {
   const jsonStr = JSON.stringify(payload);
   for (const client of state.frontendClients) {
     if (client.readyState === WebSocket.OPEN) {

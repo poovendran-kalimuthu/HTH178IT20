@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import apiRouter from './routes/api.js';
 import { initDB } from './config/db.js';
 import { initWebSocketServer } from './services/esp32Socket.js';
+import { startSheddingEngine } from './controllers/sheddingController.js';
 
 dotenv.config();
 
@@ -68,6 +69,9 @@ const startServer = async () => {
 
   // Initialize WebSocket server attached to HTTP server
   initWebSocketServer(server);
+
+  // Start LightGBM Realtime Shedding & Scheduling Automation Daemon
+  startSheddingEngine();
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`\n=================================================`);

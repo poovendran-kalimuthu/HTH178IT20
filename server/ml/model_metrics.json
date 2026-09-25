@@ -1,0 +1,21 @@
+{
+  "model": "LightGBM v4.7.0 (LGBMRegressor)",
+  "rmse": 0.1759,
+  "mae": 0.1175,
+  "r2_score": 0.9805,
+  "accuracy_pct": 98.05,
+  "n_estimators": 180,
+  "features": {
+    "rolling_mean_3h": 31.69,
+    "lag_1h": 24.22,
+    "lag_2h": 21.16,
+    "rolling_max_6h": 9.42,
+    "hour": 4.92,
+    "lag_24h": 3.03,
+    "ambient_temp_c": 2.68,
+    "tariff_rate": 1.05,
+    "day_of_week": 0.98,
+    "is_peak_window": 0.86,
+    "is_weekend": 0.0
+  }
+}

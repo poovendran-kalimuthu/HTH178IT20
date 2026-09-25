@@ -132,10 +132,14 @@ export function useEsp32() {
 
     return () => {
       clearInterval(pollInterval);
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) {
-        wsRef.current.close();
+        const socket = wsRef.current;
         wsRef.current = null;
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close();
+        } else if (socket.readyState === WebSocket.CONNECTING) {
+          socket.onopen = () => socket.close();
+        }
       }
     };
   }, [fetchStatus, connectWs, wsConnected]);
